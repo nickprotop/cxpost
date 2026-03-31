@@ -646,6 +646,9 @@ public class CXPostApp : IDisposable
         foreach (var control in dashboardControls)
             _dashboardPanel.AddControl(control);
         _dashboardPanel.Visible = true;
+
+        // Keep focus on folder tree
+        _folderTree?.RequestFocus();
     }
 
     public void RefreshFolderTree() => PopulateFolderTree();
