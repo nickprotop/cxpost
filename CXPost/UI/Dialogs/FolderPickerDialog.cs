@@ -20,14 +20,28 @@ public class FolderPickerDialog : DialogBase<MailFolder?>
     }
 
     protected override string GetTitle() => "Move to Folder";
-    protected override (int width, int height) GetSize() => (40, 16);
+    protected override (int width, int height) GetSize() => (40, 20);
     protected override bool GetResizable() => false;
     protected override MailFolder? GetDefaultResult() => null;
 
     protected override void BuildContent()
     {
+        // Header
+        Modal.AddControl(Controls.Markup()
+            .AddLine("[cyan1 bold]📁  Move to Folder[/]")
+            .AddLine("[grey70]Select destination folder[/]")
+            .WithMargin(2, 2, 2, 0)
+            .Build());
+
+        // Separator
+        var separator = Controls.RuleBuilder().WithColor(Color.Grey23).Build();
+        separator.Margin = new Margin(2, 1, 2, 0);
+        Modal.AddControl(separator);
+
+        // Folder list
         _folderList = Controls.List("Select folder:")
             .WithAutoHighlightOnFocus(true)
+            .WithMargin(2, 0, 2, 0)
             .Build();
 
         foreach (var folder in _folders)
@@ -38,9 +52,9 @@ public class FolderPickerDialog : DialogBase<MailFolder?>
         Modal.AddControl(_folderList);
 
         // Rule before buttons
-        Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{"─".PadRight(36, '─')}[/]")
-            .StickyBottom()
-            .Build());
+        var rule = Controls.RuleBuilder().StickyBottom().WithColor(Color.Grey23).Build();
+        rule.Margin = new Margin(2, 0, 2, 0);
+        Modal.AddControl(rule);
 
         // Button row
         var selectButton = Controls.Button("[grey93]  Select (Enter)  [/]")
@@ -66,7 +80,7 @@ public class FolderPickerDialog : DialogBase<MailFolder?>
             .Column(col => col.Width(2))
             .Column(col => col.Add(cancelButton))
             .Build();
-        buttonGrid.Margin = new Margin(0, 1, 0, 0);
+        buttonGrid.Margin = new Margin(2, 0, 2, 0);
         Modal.AddControl(buttonGrid);
     }
 

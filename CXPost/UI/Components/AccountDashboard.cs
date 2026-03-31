@@ -59,7 +59,7 @@ public static class AccountDashboard
             .WithMaxValue(Math.Max(totalMessages, 1))
             .WithFilledColor(Color.Cyan1)
             .WithUnfilledColor(Color.Grey19)
-            .Stretch()
+            .WithWidth(60)
             .ShowPercentage(false)
             .WithMargin(2, 0, 2, 0)
             .Build());
@@ -71,7 +71,7 @@ public static class AccountDashboard
             .WithMaxValue(Math.Max(totalMessages, 1))
             .WithFilledColor(Color.Yellow)
             .WithUnfilledColor(Color.Grey19)
-            .Stretch()
+            .WithWidth(60)
             .ShowPercentage()
             .WithMargin(2, 0, 2, 0)
             .Build());
@@ -83,7 +83,7 @@ public static class AccountDashboard
             .WithMaxValue(Math.Max(totalMessages, 1))
             .WithFilledColor(Color.Green)
             .WithUnfilledColor(Color.Grey19)
-            .Stretch()
+            .WithWidth(60)
             .ShowPercentage()
             .WithMargin(2, 0, 2, 1)
             .Build());
@@ -179,7 +179,7 @@ public static class AccountDashboard
             .WithMaxValue(Math.Max(totalMessages, 1))
             .WithFilledColor(Color.Yellow)
             .WithUnfilledColor(Color.Grey19)
-            .Stretch()
+            .WithWidth(60)
             .ShowPercentage()
             .WithMargin(2, 0, 2, 1)
             .Build());
@@ -229,6 +229,7 @@ public static class AccountDashboard
         var detailsTable = Controls.Table()
             .AddColumn("", width: 12)
             .AddColumn("")
+            .HideHeader()
             .AddRow("[grey50]IMAP[/]", $"[grey70]{MarkupParser.Escape(account.ImapHost)}:{account.ImapPort}[/]")
             .AddRow("[grey50]SMTP[/]", $"[grey70]{MarkupParser.Escape(account.SmtpHost)}:{account.SmtpPort}[/]")
             .AddRow("[grey50]Signature[/]", $"[grey70]{sigPreview}[/]")

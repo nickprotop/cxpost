@@ -13,24 +13,39 @@ public class SearchDialog : DialogBase<string?>
     private PromptControl? _searchField;
 
     protected override string GetTitle() => "Search Messages";
-    protected override (int width, int height) GetSize() => (60, 10);
+    protected override (int width, int height) GetSize() => (60, 12);
     protected override bool GetResizable() => false;
     protected override string? GetDefaultResult() => null;
 
     protected override void BuildContent()
     {
-        var label = Controls.Markup($"[{ColorScheme.PrimaryMarkup}]Search by subject, sender, or body:[/]").Build();
-        label.HorizontalAlignment = HorizontalAlignment.Stretch;
-        Modal.AddControl(label);
+        // Header
+        Modal.AddControl(Controls.Markup()
+            .AddLine("[cyan1 bold]\U0001f50d  Search Messages[/]")
+            .AddLine("[grey70]Search by subject, sender, or body[/]")
+            .WithMargin(2, 2, 2, 0)
+            .Build());
 
+        // Separator
+        var separator = Controls.RuleBuilder()
+            .WithColor(Color.Grey23)
+            .Build();
+        separator.Margin = new Margin(2, 1, 2, 0);
+        Modal.AddControl(separator);
+
+        // Search field
         _searchField = new PromptControl { Prompt = "> " };
         _searchField.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _searchField.Margin = new Margin(2, 1, 2, 0);
         Modal.AddControl(_searchField);
 
-        // Rule before buttons
-        Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{"─".PadRight(56, '─')}[/]")
+        // Bottom rule
+        var bottomRule = Controls.RuleBuilder()
             .StickyBottom()
-            .Build());
+            .WithColor(Color.Grey23)
+            .Build();
+        bottomRule.Margin = new Margin(2, 0, 2, 0);
+        Modal.AddControl(bottomRule);
 
         // Button row
         var searchButton = Controls.Button("[grey93]  Search (Enter)  [/]")
@@ -55,8 +70,8 @@ public class SearchDialog : DialogBase<string?>
             .Column(col => col.Add(searchButton))
             .Column(col => col.Width(2))
             .Column(col => col.Add(cancelButton))
+            .WithMargin(2, 0, 2, 0)
             .Build();
-        buttonGrid.Margin = new Margin(0, 1, 0, 0);
         Modal.AddControl(buttonGrid);
     }
 

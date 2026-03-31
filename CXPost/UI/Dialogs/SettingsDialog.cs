@@ -36,20 +36,27 @@ public class SettingsDialog : DialogBase<bool>
     }
 
     protected override string GetTitle() => "Settings";
-    protected override (int width, int height) GetSize() => (55, 20);
+    protected override (int width, int height) GetSize() => (55, 22);
     protected override bool GetDefaultResult() => _changed;
 
     protected override void BuildContent()
     {
         // Header
-        Modal.AddControl(Controls.Markup($"[{ColorScheme.PrimaryMarkup}]Accounts[/]")
-            .WithMargin(1, 1, 0, 0)
+        Modal.AddControl(Controls.Markup()
+            .AddLine("[cyan1 bold]⚙  Settings[/]")
+            .AddLine("[grey70]Manage accounts and preferences[/]")
+            .WithMargin(2, 2, 2, 0)
             .Build());
+
+        // Separator
+        var separator = Controls.RuleBuilder().WithColor(Color.Grey23).Build();
+        separator.Margin = new Margin(2, 1, 2, 0);
+        Modal.AddControl(separator);
 
         // Account list
         _accountList = Controls.List()
             .WithAutoHighlightOnFocus(true)
-            .WithMargin(1, 0, 1, 0)
+            .WithMargin(2, 0, 2, 0)
             .Build();
         _accountList.HorizontalAlignment = HorizontalAlignment.Stretch;
         _accountList.VerticalAlignment = VerticalAlignment.Fill;
@@ -98,7 +105,7 @@ public class SettingsDialog : DialogBase<bool>
             .Column(col => col.Width(1))
             .Column(col => col.Add(closeButton))
             .Build();
-        buttonGrid.Margin = new Margin(0, 1, 0, 0);
+        buttonGrid.Margin = new Margin(2, 0, 2, 0);
         Modal.AddControl(buttonGrid);
     }
 

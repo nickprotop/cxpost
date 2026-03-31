@@ -31,11 +31,29 @@ public class AccountSetupDialog : DialogBase<Account?>
 
     protected override void BuildContent()
     {
+        // Header
+        var title = _existing != null ? "Edit Account" : "Add Account";
+        Modal.AddControl(Controls.Markup()
+            .AddLine($"[cyan1 bold]\u2709  {title}[/]")
+            .AddLine("[grey70]Configure your email account settings[/]")
+            .WithMargin(2, 2, 2, 0)
+            .Build());
+
+        // Separator rule after header
+        Modal.AddControl(Controls.RuleBuilder()
+            .WithColor(Color.Grey23)
+            .WithMargin(2, 1, 2, 0)
+            .Build());
+
         void AddField(string label, ref PromptControl? field, string value = "")
         {
-            Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{label}:[/]").Build());
+            var lbl = Controls.Markup($"[{ColorScheme.MutedMarkup}]{label}:[/]")
+                .WithMargin(2, 0, 2, 0)
+                .Build();
+            Modal.AddControl(lbl);
             field = new PromptControl { Prompt = "", Input = value };
             field.HorizontalAlignment = HorizontalAlignment.Stretch;
+            field.Margin = new Margin(2, 0, 2, 1);
             Modal.AddControl(field);
         }
 
@@ -52,14 +70,17 @@ public class AccountSetupDialog : DialogBase<Account?>
 
         // Help text
         Modal.AddControl(Controls.Markup(
-            $"[{ColorScheme.MutedMarkup}]Enter: Save  |  Esc: Cancel[/]")
+            "[grey50]Enter: Save  |  Esc: Cancel[/]")
             .WithAlignment(HorizontalAlignment.Center)
+            .WithMargin(2, 0, 2, 0)
             .StickyBottom()
             .Build());
 
         // Rule before buttons
-        Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{"─".PadRight(56, '─')}[/]")
+        Modal.AddControl(Controls.RuleBuilder()
             .StickyBottom()
+            .WithColor(Color.Grey23)
+            .WithMargin(2, 0, 2, 0)
             .Build());
 
         // Button row
@@ -81,7 +102,7 @@ public class AccountSetupDialog : DialogBase<Account?>
             .Column(col => col.Width(2))
             .Column(col => col.Add(cancelButton))
             .Build();
-        buttonGrid.Margin = new Margin(0, 1, 0, 0);
+        buttonGrid.Margin = new Margin(2, 1, 2, 0);
         Modal.AddControl(buttonGrid);
     }
 

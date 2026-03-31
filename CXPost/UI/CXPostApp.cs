@@ -52,6 +52,13 @@ public class CXPostApp : IDisposable
     private MarkupControl? _rightPanelHeader;
     private MarkupControl? _previewPanelHeader;
 
+    // Track preview column and its splitter for wide layout visibility
+    private ColumnContainer? _previewColumn;
+    private SplitterControl? _previewSplitter;
+
+    // Toolbar
+    private ToolbarControl? _toolbar;
+
     // Message bar
     private Components.MessageBar? _messageBar;
 
@@ -186,6 +193,18 @@ public class CXPostApp : IDisposable
             .WithColor(ColorScheme.BorderColor)
             .Build();
 
+        // ── Toolbar ──────────────────────────────────────────────────────────
+
+        _toolbar = Controls.Toolbar()
+            .StickyTop()
+            .WithSpacing(1)
+            .WithMargin(1, 0, 1, 0)
+            .WithBackgroundColor(Color.Transparent)
+            .WithBelowLineColor(ColorScheme.BorderColor)
+            .Build();
+
+        UpdateToolbar();
+
         // ── Bottom status bar (clickable help bar) ─────────────────────────
 
         var bottomHelpControl = _statusBar.BottomLeftControl;
@@ -232,6 +251,7 @@ public class CXPostApp : IDisposable
             .WithBackgroundGradient(gradient, GradientDirection.Vertical)
             .AddControl(topStatusBar)
             .AddControl(topRule)
+            .AddControl(_toolbar)
             .AddControl(_mainGrid)
             .AddControl(_messageBar.Rule)
             .AddControl(_messageBar.Control)
@@ -256,6 +276,7 @@ public class CXPostApp : IDisposable
         // Update initial status
         _statusBar.UpdateConnectionStatus(0, false);
         UpdateHelpBar();
+        UpdateToolbar();
 
         // First-run: if no accounts configured, prompt for account setup
         if (_config.Accounts.Count == 0)
@@ -295,10 +316,10 @@ public class CXPostApp : IDisposable
             messageColumn.AddContent(_dashboardPanel!);
             _mainGrid.AddColumnWithSplitter(messageColumn);
 
-            var previewColumn = new ColumnContainer(_mainGrid);
-            previewColumn.AddContent(_previewPanelHeader!);
-            previewColumn.AddContent(_readingPane!);
-            _mainGrid.AddColumnWithSplitter(previewColumn);
+            _previewColumn = new ColumnContainer(_mainGrid);
+            _previewColumn.AddContent(_previewPanelHeader!);
+            _previewColumn.AddContent(_readingPane!);
+            _previewSplitter = _mainGrid.AddColumnWithSplitter(_previewColumn);
 
             // Horizontal splitter not used in wide layout
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
@@ -306,6 +327,8 @@ public class CXPostApp : IDisposable
         else
         {
             // Classic layout: Folders | Messages / Preview (2 columns, vertical split)
+            _previewColumn = null;
+            _previewSplitter = null;
             var rightColumn = new ColumnContainer(_mainGrid);
             rightColumn.AddContent(_rightPanelHeader!);
             rightColumn.AddContent(_messageTable!);
@@ -318,6 +341,70 @@ public class CXPostApp : IDisposable
         }
 
         _mainGrid.Invalidate();
+    }
+
+    private void UpdateToolbar()
+    {
+        if (_toolbar == null) return;
+
+        _toolbar.Clear();
+
+        var hasMessage = GetSelectedMessage() != null;
+        var isDashboard = _dashboardPanel?.Visible == true;
+
+        // Always available
+        AddToolbarButton("\u2709 Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
+        AddToolbarButton("\u21bb Sync", () => SimulateKey(ConsoleKey.F5));
+        AddToolbarButton("\u2315 Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
+
+        if (!isDashboard && hasMessage)
+        {
+            _toolbar.AddItem(new SeparatorControl());
+            AddToolbarButton("\u21a9 Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
+            AddToolbarButton("\u21aa Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
+            _toolbar.AddItem(new SeparatorControl());
+            AddToolbarButton("\u2691 Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
+            AddToolbarButton("\u2022 Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
+            AddToolbarButton("\u2192 Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
+            AddToolbarButton("\u2717 Delete", () => SimulateKey(ConsoleKey.Delete));
+        }
+
+        _toolbar.AddItem(new SeparatorControl());
+        var layoutLabel = _currentLayout == "classic" ? "\u25eb Wide" : "\u2b12 Classic";
+        AddToolbarButton(layoutLabel, () => SimulateKey(ConsoleKey.F8));
+
+        AddToolbarButton("\u2699 Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
+    }
+
+    private void UpdatePreviewHeader(MailMessage? msg = null)
+    {
+        if (_previewPanelHeader == null) return;
+
+        if (msg != null && _messageTable != null)
+        {
+            var selectedIdx = _messageTable.SelectedRowIndex + 1;
+            var total = _messageTable.RowCount;
+            var status = msg.IsRead ? "[grey50]Read[/]" : "[yellow]Unread[/]";
+            var date = msg.Date.ToString("MMM d, yyyy 'at' h:mm tt");
+            _previewPanelHeader.SetContent(
+                [$"[grey70]{selectedIdx} of {total}[/]  {status}  [grey50]{date}[/]"]);
+        }
+        else
+        {
+            _previewPanelHeader.SetContent(["[grey70]Preview[/]"]);
+        }
+    }
+
+    private void AddToolbarButton(string text, Action onClick)
+    {
+        var button = Controls.Button()
+            .WithText(text)
+            .WithBorder(ButtonBorderStyle.Rounded)
+            .WithBackgroundColor(Color.Transparent)
+            .WithBorderBackgroundColor(Color.Transparent)
+            .OnClick((_, _) => onClick())
+            .Build();
+        _toolbar!.AddItem(button);
     }
 
     private void UpdateHelpBar()
@@ -618,6 +705,7 @@ public class CXPostApp : IDisposable
 
             ClearReadingPane();
             UpdateHelpBar();
+        UpdateToolbar();
         }
         else if (args.Node?.Tag is List<MailFolder> aggregatedFolders)
         {
@@ -642,6 +730,7 @@ public class CXPostApp : IDisposable
 
             ClearReadingPane();
             UpdateHelpBar();
+        UpdateToolbar();
         }
         else if (args.Node?.Tag is Account account)
         {
@@ -652,6 +741,7 @@ public class CXPostApp : IDisposable
             _statusBar.UpdateBreadcrumb(account.Name, "Dashboard");
             _rightPanelHeader?.SetContent([$"[grey70]Account Dashboard[/]"]);
             UpdateHelpBar();
+        UpdateToolbar();
         }
         else if (args.Node?.Tag is string tag && tag == "all-accounts")
         {
@@ -662,6 +752,7 @@ public class CXPostApp : IDisposable
             _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard");
             _rightPanelHeader?.SetContent([$"[grey70]Dashboard[/]"]);
             UpdateHelpBar();
+        UpdateToolbar();
         }
     }
 
@@ -672,6 +763,9 @@ public class CXPostApp : IDisposable
         if (_readingPane != null) _readingPane.Visible = true;
         if (_dashboardPanel != null) _dashboardPanel.Visible = false;
         if (_previewPanelHeader != null) _previewPanelHeader.Visible = true;
+        if (_previewColumn != null) _previewColumn.Visible = true;
+        if (_previewSplitter != null) _previewSplitter.Visible = true;
+        UpdatePreviewHeader(GetSelectedMessage());
 
         if (_currentLayout == "classic")
         {
@@ -683,19 +777,26 @@ public class CXPostApp : IDisposable
         }
     }
 
-    private void ShowDashboardView(List<IWindowControl> dashboardControls)
+    private void ApplyDashboardVisibility()
     {
-        // Hide message list + reading pane, show dashboard
         if (_messageTable != null) _messageTable.Visible = false;
         if (_readingPane != null) _readingPane.Visible = false;
         if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
         if (_previewPanelHeader != null) _previewPanelHeader.Visible = false;
+        if (_previewColumn != null) _previewColumn.Visible = false;
+        if (_previewSplitter != null) _previewSplitter.Visible = false;
+        if (_dashboardPanel != null) _dashboardPanel.Visible = true;
+        UpdatePreviewHeader();
+    }
 
+    private void ShowDashboardView(List<IWindowControl> dashboardControls)
+    {
         if (_dashboardPanel == null) return;
         _dashboardPanel.ClearContents();
         foreach (var control in dashboardControls)
             _dashboardPanel.AddControl(control);
-        _dashboardPanel.Visible = true;
+
+        ApplyDashboardVisibility();
 
         // Keep focus on folder tree
         _mainWindow?.FocusManager?.SetFocus(_folderTree as IFocusableControl, FocusReason.Programmatic);
@@ -752,7 +853,9 @@ public class CXPostApp : IDisposable
 
         // Show what we have immediately (headers + cached body or "Loading...")
         ShowMessagePreview(msg);
+        UpdatePreviewHeader(msg);
         UpdateHelpBar();
+        UpdateToolbar();
 
         // Fetch body in background if not cached
         if (!msg.BodyFetched)
@@ -1000,6 +1103,7 @@ public class CXPostApp : IDisposable
                             else
                                 ClearReadingPane();
                             UpdateHelpBar();
+        UpdateToolbar();
                         });
                     }
                     catch (Exception ex)
@@ -1099,26 +1203,19 @@ public class CXPostApp : IDisposable
         }
         else if (e.KeyInfo.Key == KeyBindings.SwitchLayout)
         {
+            var isDashboard = _dashboardPanel?.Visible == true;
             _currentLayout = _currentLayout == "classic" ? "wide" : "classic";
             _config.Layout = _currentLayout;
             _configService.Save(_config);
             RebuildMainGrid();
 
-            // Re-apply dashboard/message visibility based on current view
-            if (_dashboardPanel?.Visible == true)
-            {
-                // Dashboard is showing — keep it visible
-                if (_currentLayout == "wide")
-                {
-                    if (_readingPane != null) _readingPane.Visible = false;
-                    if (_previewPanelHeader != null) _previewPanelHeader.Visible = false;
-                }
-            }
+            // Re-apply current view visibility
+            if (isDashboard)
+                ApplyDashboardVisibility();
             else
-            {
                 ShowMessageListView();
-            }
 
+            UpdateToolbar();
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.Settings)
