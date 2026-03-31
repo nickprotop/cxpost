@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
+    <ProjectReference Include="../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
     <PackageReference Include="MailKit" Version="4.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.*" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="9.*" />
