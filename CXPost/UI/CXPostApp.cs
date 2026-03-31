@@ -93,7 +93,7 @@ public class CXPostApp : IDisposable
         // Folder tree
         _folderTree = Controls.Tree()
             .WithGuide(TreeGuide.Line)
-            .WithHighlightColors(Color.White, Color.Grey30)
+            .WithHighlightColors(Color.White, Color.Grey37)
             .WithForegroundColor(ColorScheme.SecondaryText)
             .WithMargin(1, 1, 1, 0)
             .Build();
@@ -400,27 +400,75 @@ public class CXPostApp : IDisposable
 
         var totalUnread = 0;
 
+        // Collect all folders across accounts, grouped by type
+        var foldersByType = new Dictionary<string, List<MailFolder>>(StringComparer.OrdinalIgnoreCase);
+        var allAccountFolders = new List<(Account account, List<MailFolder> folders)>();
+
         foreach (var account in _config.Accounts)
+        {
+            var folders = _cacheService.GetFolders(account.Id);
+            allAccountFolders.Add((account, folders));
+            foreach (var folder in folders)
+            {
+                if (folder.DisplayName.StartsWith("[") && folder.DisplayName.EndsWith("]"))
+                    continue;
+                var key = NormalizeFolderType(folder.DisplayName, folder.Path);
+                if (!foldersByType.ContainsKey(key))
+                    foldersByType[key] = [];
+                foldersByType[key].Add(folder);
+            }
+        }
+
+        // ── "All Accounts" aggregated view (at top) ─────────────────────────
+        // Count total unread first (populated below)
+        var allNode = _folderTree.AddRootNode("\U0001f4ec All Accounts");
+        allNode.TextColor = ColorScheme.PrimaryText;
+        allNode.Tag = "all-accounts";
+
+        foreach (var type in foldersByType.Keys.OrderBy(FolderSortKey))
+        {
+            var typeFolders = foldersByType[type];
+            var icon = GetFolderIcon(type);
+
+            var unread = 0;
+            var total = 0;
+            foreach (var f in typeFolders)
+            {
+                var msgs = _cacheService.GetMessages(f.Id);
+                unread += msgs.Count(m => !m.IsRead);
+                total += msgs.Count;
+            }
+
+            totalUnread += unread;
+
+            string text;
+            if (unread > 0)
+                text = $"{icon} {MarkupParser.Escape(type)} [yellow]({unread})[/]";
+            else if (total > 0)
+                text = $"{icon} {MarkupParser.Escape(type)} [grey35]({total})[/]";
+            else
+                text = $"[grey70]{icon} {MarkupParser.Escape(type)}[/]";
+
+            var child = allNode.AddChild(text);
+            child.Tag = typeFolders; // List<MailFolder> — aggregated
+        }
+
+        // ── Per-account folders ──────────────────────────────────────────────
+        foreach (var (account, folders) in allAccountFolders)
         {
             var accountNode = _folderTree.AddRootNode($"[grey50 bold]{MarkupParser.Escape(account.Name.ToUpperInvariant())}[/]");
             accountNode.TextColor = ColorScheme.MutedText;
             accountNode.Tag = account;
 
-            var folders = _cacheService.GetFolders(account.Id);
             foreach (var folder in folders.OrderBy(f => FolderSortKey(f.DisplayName)).ThenBy(f => f.Path))
             {
-                // Skip virtual container folders (e.g. [Gmail])
                 if (folder.DisplayName.StartsWith("[") && folder.DisplayName.EndsWith("]"))
                     continue;
 
                 var icon = GetFolderIcon(folder.DisplayName);
-
-                // Always count unread from cached messages (server count is unreliable)
                 var msgs = _cacheService.GetMessages(folder.Id);
                 var unread = msgs.Count(m => !m.IsRead);
                 var total = msgs.Count;
-
-                totalUnread += unread;
 
                 string text;
                 if (unread > 0)
@@ -435,15 +483,35 @@ public class CXPostApp : IDisposable
             }
         }
 
-        // "All Inboxes" at the top with total unread
+        // Update "All Accounts" text with total unread
         var allText = totalUnread > 0
-            ? $"\U0001f4ec All Inboxes [yellow]({totalUnread})[/]"
-            : "\U0001f4ec All Inboxes";
-        var allInboxes = new TreeNode(allText) { TextColor = ColorScheme.PrimaryText };
-        _folderTree.AddRootNode(allInboxes);
+            ? $"\U0001f4ec All Accounts [yellow]({totalUnread})[/]"
+            : "\U0001f4ec All Accounts";
+        allNode.Text = allText;
 
-        // Update status bar
         _statusBar.UpdateConnectionStatus(totalUnread, _imapService.IsConnected);
+    }
+
+    /// <summary>
+    /// Maps folder names from different providers to canonical type names
+    /// so they can be aggregated across accounts.
+    /// </summary>
+    private static string NormalizeFolderType(string displayName, string path)
+    {
+        var lower = displayName.ToLowerInvariant();
+        var pathLower = path.ToLowerInvariant();
+
+        if (lower == "inbox" || pathLower == "inbox") return "Inbox";
+        if (lower.Contains("sent") || pathLower.Contains("sent")) return "Sent";
+        if (lower.Contains("draft") || pathLower.Contains("draft")) return "Drafts";
+        if (lower.Contains("trash") || lower.Contains("deleted") || pathLower.Contains("trash")) return "Trash";
+        if (lower.Contains("spam") || lower.Contains("junk") || pathLower.Contains("spam") || pathLower.Contains("junk")) return "Spam";
+        if (lower.Contains("archive") || pathLower.Contains("archive") || lower.Contains("all mail")) return "Archive";
+        if (lower.Contains("star") || lower.Contains("flagged") || pathLower.Contains("starred")) return "Starred";
+        if (lower.Contains("important") || pathLower.Contains("important")) return "Important";
+        if (lower.Contains("snoozed") || pathLower.Contains("snoozed")) return "Snoozed";
+
+        return displayName; // Custom folder — keep original name
     }
 
     private static int FolderSortKey(string name)
@@ -493,28 +561,24 @@ public class CXPostApp : IDisposable
             ClearReadingPane();
             UpdateHelpBar();
         }
-        else if (args.Node?.TextColor == ColorScheme.PrimaryText)
+        else if (args.Node?.Tag is List<MailFolder> aggregatedFolders)
         {
-            // "All Inboxes" — aggregate all inbox folders
+            // Aggregated folder type (e.g. All Accounts > Inbox)
             var allMessages = new List<MailMessage>();
-            foreach (var account in _config.Accounts)
+            MailFolder? lastFolder = null;
+            foreach (var f in aggregatedFolders)
             {
-                var folders = _cacheService.GetFolders(account.Id);
-                var inbox = folders.FirstOrDefault(f =>
-                    f.DisplayName.Equals("INBOX", StringComparison.OrdinalIgnoreCase) ||
-                    f.DisplayName.Equals("Inbox", StringComparison.OrdinalIgnoreCase));
-                if (inbox != null)
-                {
-                    _messageListCoordinator.SelectFolder(inbox);
-                    allMessages.AddRange(_cacheService.GetMessages(inbox.Id));
-                }
+                allMessages.AddRange(_cacheService.GetMessages(f.Id));
+                lastFolder = f;
             }
+            if (lastFolder != null)
+                _messageListCoordinator.SelectFolder(lastFolder);
 
-            // Sort all messages by date desc
             allMessages.Sort((a, b) => b.Date.CompareTo(a.Date));
             PopulateMessageList(allMessages);
 
-            _statusBar.UpdateBreadcrumb("All Accounts", "Inbox");
+            var typeName = NormalizeFolderType(aggregatedFolders[0].DisplayName, aggregatedFolders[0].Path);
+            _statusBar.UpdateBreadcrumb("All Accounts", typeName);
             _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({allMessages.Count})[/]"]);
 
             ClearReadingPane();
