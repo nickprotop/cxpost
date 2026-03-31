@@ -43,6 +43,8 @@ public class CXPostApp : IDisposable
     private ScrollablePanelControl? _readingPane;
     private MarkupControl? _readingContent;
     private HorizontalGridControl? _mainGrid;
+    private ScrollablePanelControl? _dashboardPanel;
+    private HorizontalSplitterControl? _listReadingSplitter;
 
     // Status bar controls
     private MarkupControl? _topStatusRight;
@@ -126,9 +128,17 @@ public class CXPostApp : IDisposable
             .Build();
 
         // Splitter between message list and reading pane
-        var listReadingSplitter = Controls.HorizontalSplitter()
+        _listReadingSplitter = Controls.HorizontalSplitter()
             .WithMinHeights(5, 5)
             .Build();
+
+        // Dashboard panel (hidden by default, shown when account/all is selected)
+        _dashboardPanel = Controls.ScrollablePanel()
+            .WithScrollbar(true)
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .WithVerticalAlignment(VerticalAlignment.Fill)
+            .Build();
+        _dashboardPanel.Visible = false;
 
         // Panel headers
         _leftPanelHeader = Controls.Markup("[grey70]Folders[/]")
@@ -149,8 +159,9 @@ public class CXPostApp : IDisposable
             {
                 col.Add(_rightPanelHeader);
                 col.Add(_messageTable);
-                col.Add(listReadingSplitter);
+                col.Add(_listReadingSplitter);
                 col.Add(_readingPane);
+                col.Add(_dashboardPanel);
             })
             .WithSplitterAfter(0)
             .WithAlignment(HorizontalAlignment.Stretch)
@@ -241,6 +252,12 @@ public class CXPostApp : IDisposable
 
         // Populate folder tree with cached data
         PopulateFolderTree();
+
+        // Show "All Accounts" dashboard on startup
+        ShowDashboardView(
+            Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
+        _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard");
+        _rightPanelHeader?.SetContent([$"[grey70]Dashboard[/]"]);
 
         // Update initial status
         _statusBar.UpdateConnectionStatus(0, false);
@@ -548,7 +565,8 @@ public class CXPostApp : IDisposable
     {
         if (args.Node?.Tag is MailFolder folder)
         {
-            // Single folder selected
+            // Single folder selected — show message list
+            ShowMessageListView();
             _messageListCoordinator.SelectFolder(folder);
 
             var messages = _cacheService.GetMessages(folder.Id);
@@ -564,6 +582,7 @@ public class CXPostApp : IDisposable
         else if (args.Node?.Tag is List<MailFolder> aggregatedFolders)
         {
             // Aggregated folder type (e.g. All Accounts > Inbox)
+            ShowMessageListView();
             var allMessages = new List<MailMessage>();
             MailFolder? lastFolder = null;
             foreach (var f in aggregatedFolders)
@@ -584,6 +603,49 @@ public class CXPostApp : IDisposable
             ClearReadingPane();
             UpdateHelpBar();
         }
+        else if (args.Node?.Tag is Account account)
+        {
+            // Account node — show account dashboard
+            ShowDashboardView(
+                Components.AccountDashboard.BuildAccountDashboard(account, _cacheService));
+
+            _statusBar.UpdateBreadcrumb(account.Name, "Dashboard");
+            _rightPanelHeader?.SetContent([$"[grey70]Account Dashboard[/]"]);
+            UpdateHelpBar();
+        }
+        else if (args.Node?.Tag is string tag && tag == "all-accounts")
+        {
+            // All Accounts node — show aggregated dashboard
+            ShowDashboardView(
+                Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
+
+            _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard");
+            _rightPanelHeader?.SetContent([$"[grey70]Dashboard[/]"]);
+            UpdateHelpBar();
+        }
+    }
+
+    private void ShowMessageListView()
+    {
+        // Ensure message list + reading pane are visible, dashboard hidden
+        if (_messageTable != null) _messageTable.Visible = true;
+        if (_readingPane != null) _readingPane.Visible = true;
+        if (_dashboardPanel != null) _dashboardPanel.Visible = false;
+        if (_listReadingSplitter != null) _listReadingSplitter.Visible = true;
+    }
+
+    private void ShowDashboardView(List<IWindowControl> dashboardControls)
+    {
+        // Hide message list + reading pane, show dashboard
+        if (_messageTable != null) _messageTable.Visible = false;
+        if (_readingPane != null) _readingPane.Visible = false;
+        if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+
+        if (_dashboardPanel == null) return;
+        _dashboardPanel.ClearContents();
+        foreach (var control in dashboardControls)
+            _dashboardPanel.AddControl(control);
+        _dashboardPanel.Visible = true;
     }
 
     public void RefreshFolderTree() => PopulateFolderTree();
