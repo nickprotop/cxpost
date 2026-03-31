@@ -198,6 +198,7 @@ public class CXPostApp : IDisposable
         _toolbar = Controls.Toolbar()
             .StickyTop()
             .WithSpacing(1)
+            .WithWrap()
             .WithMargin(1, 0, 1, 0)
             .WithBackgroundColor(Color.Transparent)
             .WithBelowLineColor(ColorScheme.BorderColor)

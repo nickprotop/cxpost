@@ -64,4 +64,51 @@ public class ConfigServiceTests : IDisposable
         Assert.Equal("test@example.com", loaded.Accounts[0].Email);
         Assert.Equal("imap.example.com", loaded.Accounts[0].ImapHost);
     }
+
+    [Fact]
+    public void Save_and_Load_roundtrips_new_account_properties()
+    {
+        var config = new CXPostConfig
+        {
+            Accounts =
+            [
+                new Account
+                {
+                    Name = "Test",
+                    Email = "test@example.com",
+                    ImapHost = "imap.example.com",
+                    ImapPort = 993,
+                    SmtpHost = "smtp.example.com",
+                    SmtpPort = 587,
+                    ReplyToAddress = "reply@example.com",
+                    Signature = "-- \nJohn Doe",
+                    SignaturePosition = SignaturePosition.BelowQuote,
+                    AutoBcc = "archive@example.com",
+                    DefaultCc = "team@example.com",
+                    ReplyPrefix = "RE:",
+                    ForwardPrefix = "FWD:",
+                    SyncIntervalSeconds = 120,
+                    MaxMessagesPerFolder = 500,
+                    MarkAsReadOnView = false,
+                    NotificationsEnabled = true
+                }
+            ]
+        };
+
+        _service.Save(config);
+        var loaded = _service.Load();
+
+        var a = loaded.Accounts[0];
+        Assert.Equal("reply@example.com", a.ReplyToAddress);
+        Assert.Equal("-- \nJohn Doe", a.Signature);
+        Assert.Equal(SignaturePosition.BelowQuote, a.SignaturePosition);
+        Assert.Equal("archive@example.com", a.AutoBcc);
+        Assert.Equal("team@example.com", a.DefaultCc);
+        Assert.Equal("RE:", a.ReplyPrefix);
+        Assert.Equal("FWD:", a.ForwardPrefix);
+        Assert.Equal(120, a.SyncIntervalSeconds);
+        Assert.Equal(500, a.MaxMessagesPerFolder);
+        Assert.False(a.MarkAsReadOnView);
+        Assert.True(a.NotificationsEnabled);
+    }
 }

@@ -14,6 +14,16 @@ public class Account
     public SecurityType ImapSecurity { get; set; } = SecurityType.Ssl;
     public SecurityType SmtpSecurity { get; set; } = SecurityType.StartTls;
     public DateTime? LastSync { get; set; }
+    public string ReplyToAddress { get; set; } = string.Empty;
+    public SignaturePosition SignaturePosition { get; set; } = SignaturePosition.BelowQuote;
+    public string AutoBcc { get; set; } = string.Empty;
+    public string DefaultCc { get; set; } = string.Empty;
+    public string ReplyPrefix { get; set; } = "Re:";
+    public string ForwardPrefix { get; set; } = "Fwd:";
+    public int SyncIntervalSeconds { get; set; } = 300;
+    public int MaxMessagesPerFolder { get; set; } = 0;
+    public bool MarkAsReadOnView { get; set; } = true;
+    public bool NotificationsEnabled { get; set; } = true;
 }
 
 public enum SecurityType
@@ -21,6 +31,12 @@ public enum SecurityType
     None,
     Ssl,
     StartTls
+}
+
+public enum SignaturePosition
+{
+    BelowQuote,
+    AboveQuote
 }
 
 public class CXPostConfig
