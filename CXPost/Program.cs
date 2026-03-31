@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using SharpConsoleUI;
 using SharpConsoleUI.Drivers;
+using CXPost.Coordinators;
 using CXPost.Data;
 using CXPost.Services;
 using CXPost.UI;
@@ -68,8 +69,15 @@ public class Program
             services.AddSingleton<ISmtpService, SmtpService>();
             services.AddSingleton<ThreadingService>();
 
+            // Coordinators
+            services.AddSingleton<MailSyncCoordinator>();
+            services.AddSingleton<MessageListCoordinator>();
+            services.AddSingleton<NotificationCoordinator>();
+            services.AddSingleton<ComposeCoordinator>();
+
             // App
             services.AddSingleton<CXPostApp>();
+            services.AddSingleton(provider => new Lazy<CXPostApp>(() => provider.GetRequiredService<CXPostApp>()));
 
             var provider = services.BuildServiceProvider();
 

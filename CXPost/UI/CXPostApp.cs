@@ -188,7 +188,15 @@ public class CXPostApp : IDisposable
         }
     }
 
-    private void PopulateMessageList(List<MailMessage> messages)
+    public void RefreshFolderTree() => PopulateFolderTree();
+
+    public void ShowError(string message)
+    {
+        _ws.NotificationStateService.ShowNotification(
+            "Error", message, SharpConsoleUI.Core.NotificationSeverity.Danger, timeout: 5000);
+    }
+
+    public void PopulateMessageList(List<MailMessage> messages)
     {
         if (_messageTable == null) return;
 
@@ -226,7 +234,7 @@ public class CXPostApp : IDisposable
         OnMessageSelected(sender, rowIndex);
     }
 
-    private void ShowMessagePreview(MailMessage msg)
+    public void ShowMessagePreview(MailMessage msg)
     {
         if (_readingContent == null) return;
 
