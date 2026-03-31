@@ -74,6 +74,7 @@ public class Program
             services.AddSingleton<MessageListCoordinator>();
             services.AddSingleton<NotificationCoordinator>();
             services.AddSingleton<ComposeCoordinator>();
+            services.AddSingleton<SearchCoordinator>();
 
             // App
             services.AddSingleton<CXPostApp>();

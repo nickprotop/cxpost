@@ -5,9 +5,11 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Events;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
+using CXPost.Coordinators;
 using CXPost.Models;
 using CXPost.Services;
 using CXPost.UI.Components;
+using CXPost.UI.Dialogs;
 
 namespace CXPost.UI;
 
@@ -16,6 +18,14 @@ public class CXPostApp : IDisposable
     private readonly ConsoleWindowSystem _ws;
     private readonly IConfigService _configService;
     private readonly ICacheService _cacheService;
+    private readonly ICredentialService _credentialService;
+    private readonly IImapService _imapService;
+    private readonly IContactsService _contactsService;
+    private readonly MailSyncCoordinator _syncCoordinator;
+    private readonly MessageListCoordinator _messageListCoordinator;
+    private readonly ComposeCoordinator _composeCoordinator;
+    private readonly SearchCoordinator _searchCoordinator;
+    private readonly NotificationCoordinator _notificationCoordinator;
     private readonly Components.StatusBarBuilder _statusBar;
     private readonly ConcurrentQueue<Action> _pendingUiActions = new();
     private readonly CancellationTokenSource _cts = new();
@@ -34,11 +44,27 @@ public class CXPostApp : IDisposable
     public CXPostApp(
         ConsoleWindowSystem ws,
         IConfigService configService,
-        ICacheService cacheService)
+        ICacheService cacheService,
+        ICredentialService credentialService,
+        IImapService imapService,
+        IContactsService contactsService,
+        MailSyncCoordinator syncCoordinator,
+        MessageListCoordinator messageListCoordinator,
+        ComposeCoordinator composeCoordinator,
+        SearchCoordinator searchCoordinator,
+        NotificationCoordinator notificationCoordinator)
     {
         _ws = ws;
         _configService = configService;
         _cacheService = cacheService;
+        _credentialService = credentialService;
+        _imapService = imapService;
+        _contactsService = contactsService;
+        _syncCoordinator = syncCoordinator;
+        _messageListCoordinator = messageListCoordinator;
+        _composeCoordinator = composeCoordinator;
+        _searchCoordinator = searchCoordinator;
+        _notificationCoordinator = notificationCoordinator;
         _statusBar = new Components.StatusBarBuilder();
         _config = configService.Load();
         _currentLayout = _config.Layout;
@@ -124,6 +150,27 @@ public class CXPostApp : IDisposable
 
         // Populate folder tree with cached data
         PopulateFolderTree();
+
+        // Start background sync for all configured accounts
+        StartBackgroundSync();
+    }
+
+    private void StartBackgroundSync()
+    {
+        foreach (var account in _config.Accounts)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _syncCoordinator.SyncAccountAsync(account, _cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    EnqueueUiAction(() => ShowError($"Initial sync failed for {account.Name}: {ex.Message}"));
+                }
+            }, _cts.Token);
+        }
     }
 
     private async Task MainLoopAsync(Window window, CancellationToken ct)
@@ -260,6 +307,23 @@ public class CXPostApp : IDisposable
         _readingContent.SetContent(lines);
     }
 
+    private MailMessage? GetSelectedMessage()
+    {
+        if (_messageTable == null) return null;
+        var idx = _messageTable.SelectedRowIndex;
+        if (idx < 0) return null;
+        var row = _messageTable.GetRow(idx);
+        return row?.Tag as MailMessage;
+    }
+
+    private Account? GetCurrentAccount()
+    {
+        var folder = _messageListCoordinator.CurrentFolder;
+        if (folder == null) return _config.Accounts.FirstOrDefault();
+        return _config.Accounts.FirstOrDefault(a => a.Id == folder.AccountId)
+            ?? _config.Accounts.FirstOrDefault();
+    }
+
     private void OnKeyPressed(object? sender, KeyPressedEventArgs e)
     {
         var ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
@@ -267,57 +331,238 @@ public class CXPostApp : IDisposable
 
         if (ctrl && e.KeyInfo.Key == KeyBindings.ComposeNew)
         {
-            // TODO: Task 13 -- open ComposeDialog
-            e.Handled = true;
-        }
-        else if (ctrl && e.KeyInfo.Key == KeyBindings.Reply)
-        {
-            // TODO: Task 12 -- inline reply
+            _ = Task.Run(async () =>
+            {
+                var dialog = new ComposeDialog(_contactsService);
+                var result = await dialog.ShowAsync(_ws);
+                if (result != null)
+                {
+                    var account = GetCurrentAccount();
+                    if (account != null)
+                    {
+                        try
+                        {
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                        }
+                        catch (Exception ex)
+                        {
+                            EnqueueUiAction(() => ShowError($"Send failed: {ex.Message}"));
+                        }
+                    }
+                }
+            });
             e.Handled = true;
         }
         else if (ctrl && shift && e.KeyInfo.Key == KeyBindings.Reply)
         {
-            // TODO: Task 12 -- reply all
+            // Reply all
+            var msg = GetSelectedMessage();
+            var account = GetCurrentAccount();
+            if (msg != null && account != null)
+            {
+                var (to, subject, body) = _composeCoordinator.PrepareReply(account, msg, replyAll: true);
+                _ = Task.Run(async () =>
+                {
+                    var dialog = new ComposeDialog(_contactsService, to, subject, body);
+                    var result = await dialog.ShowAsync(_ws);
+                    if (result != null)
+                    {
+                        try
+                        {
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                        }
+                        catch (Exception ex)
+                        {
+                            EnqueueUiAction(() => ShowError($"Send failed: {ex.Message}"));
+                        }
+                    }
+                });
+            }
+            e.Handled = true;
+        }
+        else if (ctrl && e.KeyInfo.Key == KeyBindings.Reply)
+        {
+            var msg = GetSelectedMessage();
+            var account = GetCurrentAccount();
+            if (msg != null && account != null)
+            {
+                var (to, subject, body) = _composeCoordinator.PrepareReply(account, msg, replyAll: false);
+                _ = Task.Run(async () =>
+                {
+                    var dialog = new ComposeDialog(_contactsService, to, subject, body);
+                    var result = await dialog.ShowAsync(_ws);
+                    if (result != null)
+                    {
+                        try
+                        {
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                        }
+                        catch (Exception ex)
+                        {
+                            EnqueueUiAction(() => ShowError($"Send failed: {ex.Message}"));
+                        }
+                    }
+                });
+            }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.Forward)
         {
-            // TODO: Task 12 -- forward
+            var msg = GetSelectedMessage();
+            var account = GetCurrentAccount();
+            if (msg != null && account != null)
+            {
+                var (to, subject, body) = _composeCoordinator.PrepareForward(msg);
+                _ = Task.Run(async () =>
+                {
+                    var dialog = new ComposeDialog(_contactsService, to, subject, body);
+                    var result = await dialog.ShowAsync(_ws);
+                    if (result != null)
+                    {
+                        try
+                        {
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                        }
+                        catch (Exception ex)
+                        {
+                            EnqueueUiAction(() => ShowError($"Send failed: {ex.Message}"));
+                        }
+                    }
+                });
+            }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.Search)
         {
-            // TODO: Task 14 -- search dialog
+            _ = Task.Run(async () =>
+            {
+                var dialog = new SearchDialog();
+                var query = await dialog.ShowAsync(_ws);
+                if (query != null && _messageListCoordinator.CurrentFolder != null)
+                {
+                    try
+                    {
+                        var results = await _searchCoordinator.SearchAsync(
+                            _messageListCoordinator.CurrentFolder, query, _cts.Token);
+                        EnqueueUiAction(() => PopulateMessageList(results));
+                    }
+                    catch (Exception ex)
+                    {
+                        EnqueueUiAction(() => ShowError($"Search failed: {ex.Message}"));
+                    }
+                }
+            });
             e.Handled = true;
         }
         else if (e.KeyInfo.Key == KeyBindings.Delete)
         {
-            // TODO: Task 11 -- delete message
+            var msg = GetSelectedMessage();
+            if (msg != null)
+            {
+                _messageListCoordinator.SelectMessage(msg);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _messageListCoordinator.DeleteMessageAsync(_cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        EnqueueUiAction(() => ShowError($"Delete failed: {ex.Message}"));
+                    }
+                });
+            }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.ToggleFlag)
         {
-            // TODO: Task 11 -- toggle flag
+            var msg = GetSelectedMessage();
+            if (msg != null)
+            {
+                _messageListCoordinator.SelectMessage(msg);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _messageListCoordinator.ToggleFlagAsync(_cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        EnqueueUiAction(() => ShowError($"Toggle flag failed: {ex.Message}"));
+                    }
+                });
+            }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.ToggleRead)
         {
-            // TODO: Task 11 -- toggle read
+            var msg = GetSelectedMessage();
+            if (msg != null)
+            {
+                _messageListCoordinator.SelectMessage(msg);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _messageListCoordinator.ToggleReadAsync(_cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        EnqueueUiAction(() => ShowError($"Toggle read failed: {ex.Message}"));
+                    }
+                });
+            }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.MoveToFolder)
         {
-            // TODO: Task 14 -- move to folder
+            var msg = GetSelectedMessage();
+            var folder = _messageListCoordinator.CurrentFolder;
+            if (msg != null && folder != null)
+            {
+                var folders = _cacheService.GetFolders(folder.AccountId);
+                _ = Task.Run(async () =>
+                {
+                    var dialog = new FolderPickerDialog(folders);
+                    var dest = await dialog.ShowAsync(_ws);
+                    if (dest != null)
+                    {
+                        try
+                        {
+                            await _imapService.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
+                            _cacheService.DeleteMessage(folder.Id, msg.Uid);
+                            _messageListCoordinator.RefreshMessageList();
+                        }
+                        catch (Exception ex)
+                        {
+                            EnqueueUiAction(() => ShowError($"Move failed: {ex.Message}"));
+                        }
+                    }
+                });
+            }
             e.Handled = true;
         }
         else if (e.KeyInfo.Key == KeyBindings.Refresh)
         {
-            // TODO: Task 11 -- force sync
+            _ = Task.Run(async () =>
+            {
+                foreach (var account in _config.Accounts)
+                {
+                    try
+                    {
+                        await _syncCoordinator.SyncAccountAsync(account, _cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        EnqueueUiAction(() => ShowError($"Sync failed: {ex.Message}"));
+                    }
+                }
+            });
             e.Handled = true;
         }
         else if (e.KeyInfo.Key == KeyBindings.SwitchLayout)
         {
-            // TODO: Toggle layout
+            // Toggle layout (placeholder — layout switching not yet implemented)
             e.Handled = true;
         }
     }
