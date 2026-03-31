@@ -449,6 +449,9 @@ public class CXPostApp : IDisposable
     {
         if (args.Node?.Tag is MailFolder folder)
         {
+            // Set current folder on the coordinator so body fetch works
+            _messageListCoordinator.SelectFolder(folder);
+
             var messages = _cacheService.GetMessages(folder.Id);
             PopulateMessageList(messages);
 
