@@ -403,9 +403,7 @@ public class CXPostApp : IDisposable
         if (_folderTree == null) return;
         _folderTree.Clear();
 
-        // "All Inboxes" virtual node
-        var allInboxes = _folderTree.AddRootNode("\U0001f4ec All Inboxes");
-        allInboxes.TextColor = ColorScheme.PrimaryText;
+        var totalUnread = 0;
 
         foreach (var account in _config.Accounts)
         {
@@ -414,17 +412,50 @@ public class CXPostApp : IDisposable
             accountNode.Tag = account;
 
             var folders = _cacheService.GetFolders(account.Id);
-            foreach (var folder in folders.OrderBy(f => f.Path))
+            foreach (var folder in folders.OrderBy(f => FolderSortKey(f.DisplayName)).ThenBy(f => f.Path))
             {
                 var icon = GetFolderIcon(folder.DisplayName);
-                var text = folder.UnreadCount > 0
-                    ? $"{icon} {MarkupParser.Escape(folder.DisplayName)} [yellow]({folder.UnreadCount})[/]"
+
+                // Count unread from cache if server count is 0
+                var unread = folder.UnreadCount;
+                if (unread == 0 && folder.DisplayName.Contains("Inbox", StringComparison.OrdinalIgnoreCase))
+                {
+                    var msgs = _cacheService.GetMessages(folder.Id);
+                    unread = msgs.Count(m => !m.IsRead);
+                }
+
+                totalUnread += unread;
+
+                var text = unread > 0
+                    ? $"{icon} {MarkupParser.Escape(folder.DisplayName)} [yellow]({unread})[/]"
                     : $"[grey70]{icon} {MarkupParser.Escape(folder.DisplayName)}[/]";
 
                 var node = accountNode.AddChild(text);
                 node.Tag = folder;
             }
         }
+
+        // "All Inboxes" at the top with total unread
+        var allText = totalUnread > 0
+            ? $"\U0001f4ec All Inboxes [yellow]({totalUnread})[/]"
+            : "\U0001f4ec All Inboxes";
+        var allInboxes = new TreeNode(allText) { TextColor = ColorScheme.PrimaryText };
+        _folderTree.AddRootNode(allInboxes);
+
+        // Update status bar
+        _statusBar.UpdateConnectionStatus(totalUnread, _imapService.IsConnected);
+    }
+
+    private static int FolderSortKey(string name)
+    {
+        var lower = name.ToLowerInvariant();
+        if (lower.Contains("inbox")) return 0;
+        if (lower.Contains("sent")) return 1;
+        if (lower.Contains("draft")) return 2;
+        if (lower.Contains("star") || lower.Contains("flagged")) return 3;
+        if (lower.Contains("spam") || lower.Contains("junk")) return 8;
+        if (lower.Contains("trash") || lower.Contains("deleted")) return 9;
+        return 5;
     }
 
     private static string GetFolderIcon(string folderName)
