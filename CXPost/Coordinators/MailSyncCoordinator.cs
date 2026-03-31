@@ -11,18 +11,21 @@ public class MailSyncCoordinator
     private readonly ICacheService _cache;
     private readonly ThreadingService _threading;
     private readonly Lazy<CXPostApp> _app;
+    private readonly NotificationCoordinator _notifications;
     private readonly ConcurrentDictionary<string, bool> _syncingAccounts = new();
 
     public MailSyncCoordinator(
         IImapService imap,
         ICacheService cache,
         ThreadingService threading,
-        Lazy<CXPostApp> app)
+        Lazy<CXPostApp> app,
+        NotificationCoordinator notifications)
     {
         _imap = imap;
         _cache = cache;
         _threading = threading;
         _app = app;
+        _notifications = notifications;
     }
 
     public async Task SyncAccountAsync(Account account, CancellationToken ct)
@@ -71,23 +74,21 @@ public class MailSyncCoordinator
                 totalMessages += afterCount - beforeCount;
             }
 
-            // Final: refresh and show completion (dismissable, with timeout)
+            // Final: refresh, dismiss progress bar, show toast notification
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.RefreshFolderTree();
-                var summary = totalMessages > 0
-                    ? $"{account.Name}: Sync complete — {totalMessages} new message{(totalMessages != 1 ? "s" : "")}"
-                    : $"{account.Name}: Sync complete — up to date";
-                _app.Value.ReplaceMessage(syncMsgId, summary,
-                    UI.Components.MessageSeverity.Success, timeoutSeconds: 5, dismissable: true);
+                _app.Value.DismissMessage(syncMsgId);
+                _notifications.NotifySyncComplete(account.Name, totalMessages);
             });
         }
         catch (Exception ex)
         {
             _app.Value.EnqueueUiAction(() =>
-                _app.Value.ReplaceMessage(syncMsgId,
-                    $"{account.Name}: Sync failed — {ex.Message}",
-                    UI.Components.MessageSeverity.Error, timeoutSeconds: 10, dismissable: true));
+            {
+                _app.Value.DismissMessage(syncMsgId);
+                _notifications.NotifyError("Sync Failed", $"{account.Name}: {ex.Message}");
+            });
         }
         finally
         {

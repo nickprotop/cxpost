@@ -12,27 +12,36 @@ public class NotificationCoordinator
         _ws = ws;
     }
 
-    public void NotifyNewMail(string from, string subject)
-    {
+    public string NotifyNewMail(string from, string subject) =>
         _ws.NotificationStateService.ShowNotification(
-            "New Mail",
+            "📬 New Mail",
             $"From: {from}\n{subject}",
             NotificationSeverity.Info,
             timeout: 5000);
-    }
 
-    public void NotifySendSuccess(string to)
-    {
+    public string NotifySendSuccess(string to) =>
         _ws.NotificationStateService.ShowNotification(
-            "Sent",
+            "✉ Sent",
             $"Message sent to {to}",
             NotificationSeverity.Success,
             timeout: 3000);
+
+    public string NotifySyncComplete(string accountName, int newMessages)
+    {
+        var msg = newMessages > 0
+            ? $"{newMessages} new message{(newMessages != 1 ? "s" : "")}"
+            : "Up to date";
+        return _ws.NotificationStateService.ShowNotification(
+            $"⟳ {accountName}",
+            msg,
+            NotificationSeverity.Success,
+            timeout: 4000);
     }
 
-    public void NotifyError(string title, string message)
-    {
+    public string NotifyError(string title, string message) =>
         _ws.NotificationStateService.ShowNotification(
-            title, message, NotificationSeverity.Danger, timeout: 5000);
-    }
+            $"✗ {title}", message, NotificationSeverity.Danger, timeout: 8000);
+
+    public void Dismiss(string id) =>
+        _ws.NotificationStateService.DismissNotification(id);
 }
