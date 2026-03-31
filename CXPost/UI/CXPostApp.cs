@@ -476,6 +476,12 @@ public class CXPostApp : IDisposable
     public string? ShowPersistent(string message, MessageSeverity severity = MessageSeverity.Info) =>
         _messageBar?.ShowPersistent(message, severity);
 
+    public string? ShowProgress(string message) => _messageBar?.ShowProgress(message);
+
+    public string? ReplaceMessage(string id, string text, MessageSeverity severity = MessageSeverity.Info,
+        int? timeoutSeconds = null, bool dismissable = false) =>
+        _messageBar?.Replace(id, text, severity, timeoutSeconds, dismissable);
+
     public void DismissMessage(string id) => _messageBar?.Dismiss(id);
 
     public void PopulateMessageList(List<MailMessage> messages)

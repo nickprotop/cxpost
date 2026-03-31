@@ -30,27 +30,64 @@ public class MailSyncCoordinator
         if (!_syncingAccounts.TryAdd(account.Id, true))
             return; // Already syncing
 
+        var syncMsgId = $"sync-{account.Id}";
+
         try
         {
+            // Progress: connecting
+            _app.Value.EnqueueUiAction(() =>
+                _app.Value.ReplaceMessage(syncMsgId,
+                    $"Connecting to {account.ImapHost}:{account.ImapPort}..."));
+
             if (!_imap.IsConnected)
                 await _imap.ConnectAsync(account, ct);
 
-            // Sync folder list
+            // Progress: fetching folder list
+            _app.Value.EnqueueUiAction(() =>
+                _app.Value.ReplaceMessage(syncMsgId,
+                    $"{account.Name}: Fetching folder list..."));
+
             var folders = await _imap.GetFoldersAsync(ct);
             _cache.SyncFolders(account.Id, folders);
 
-            // Sync headers for each folder
+            // Refresh tree immediately so folders appear
+            _app.Value.EnqueueUiAction(() => _app.Value.RefreshFolderTree());
+
+            // Progress: syncing each folder
             var cachedFolders = _cache.GetFolders(account.Id);
-            foreach (var folder in cachedFolders)
+            var totalMessages = 0;
+            for (var i = 0; i < cachedFolders.Count; i++)
             {
+                var folder = cachedFolders[i];
+                var progress = i + 1;
+                var total = cachedFolders.Count;
+                _app.Value.EnqueueUiAction(() =>
+                    _app.Value.ReplaceMessage(syncMsgId,
+                        $"{account.Name}: Syncing {folder.DisplayName} ({progress}/{total})..."));
+
+                var beforeCount = _cache.GetCachedUids(folder.Id).Count;
                 await SyncFolderAsync(account, folder, ct);
+                var afterCount = _cache.GetCachedUids(folder.Id).Count;
+                totalMessages += afterCount - beforeCount;
             }
 
-            _app.Value.EnqueueUiAction(() => _app.Value.RefreshFolderTree());
+            // Final: refresh and show completion (dismissable, with timeout)
+            _app.Value.EnqueueUiAction(() =>
+            {
+                _app.Value.RefreshFolderTree();
+                var summary = totalMessages > 0
+                    ? $"{account.Name}: Sync complete — {totalMessages} new message{(totalMessages != 1 ? "s" : "")}"
+                    : $"{account.Name}: Sync complete — up to date";
+                _app.Value.ReplaceMessage(syncMsgId, summary,
+                    UI.Components.MessageSeverity.Success, timeoutSeconds: 5, dismissable: true);
+            });
         }
         catch (Exception ex)
         {
-            _app.Value.EnqueueUiAction(() => _app.Value.ShowError($"Sync failed for {account.Name}: {ex.Message}"));
+            _app.Value.EnqueueUiAction(() =>
+                _app.Value.ReplaceMessage(syncMsgId,
+                    $"{account.Name}: Sync failed — {ex.Message}",
+                    UI.Components.MessageSeverity.Error, timeoutSeconds: 10, dismissable: true));
         }
         finally
         {

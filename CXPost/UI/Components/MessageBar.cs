@@ -18,7 +18,7 @@ public record MessageEntry(
 
 /// <summary>
 /// Stacking transient message bar. Shows messages at the bottom of the window
-/// above the help bar, with auto-timeout and manual dismiss support.
+/// above the help bar, with auto-timeout, manual dismiss, and replace support.
 /// </summary>
 public class MessageBar
 {
@@ -44,11 +44,16 @@ public class MessageBar
 
         _control.MouseClick += (_, e) =>
         {
-            // Click anywhere on the bar dismisses the top message
-            if (_messages.Count > 0)
+            // Click dismisses the latest dismissable message
+            for (var i = _messages.Count - 1; i >= 0; i--)
             {
-                DismissLatest();
-                e.Handled = true;
+                if (_messages[i].Dismissable)
+                {
+                    _messages.RemoveAt(i);
+                    Render();
+                    e.Handled = true;
+                    return;
+                }
             }
         };
     }
@@ -71,6 +76,29 @@ public class MessageBar
         return id;
     }
 
+    /// <summary>
+    /// Replace an existing message by ID, or add if not found.
+    /// Keeps the same position in the stack.
+    /// </summary>
+    public string Replace(string id, string text, MessageSeverity severity = MessageSeverity.Info,
+        int? timeoutSeconds = null, bool dismissable = false)
+    {
+        var idx = _messages.FindIndex(m => m.Id == id);
+        var entry = new MessageEntry(
+            id, text, severity,
+            DateTime.UtcNow,
+            timeoutSeconds.HasValue ? DateTime.UtcNow.AddSeconds(timeoutSeconds.Value) : null,
+            dismissable);
+
+        if (idx >= 0)
+            _messages[idx] = entry;
+        else
+            _messages.Add(entry);
+
+        Render();
+        return id;
+    }
+
     public string ShowError(string text, int? timeoutSeconds = 5) =>
         Show(text, MessageSeverity.Error, timeoutSeconds);
 
@@ -83,8 +111,15 @@ public class MessageBar
     public string ShowInfo(string text, int? timeoutSeconds = 3) =>
         Show(text, MessageSeverity.Info, timeoutSeconds);
 
-    public string ShowPersistent(string text, MessageSeverity severity = MessageSeverity.Info) =>
-        Show(text, severity, timeoutSeconds: null, dismissable: true);
+    /// <summary>
+    /// Show a persistent non-dismissable message (e.g. during sync).
+    /// Use Replace() to update it, then Dismiss() or replace with a dismissable version when done.
+    /// </summary>
+    public string ShowProgress(string text) =>
+        Show(text, MessageSeverity.Info, timeoutSeconds: null, dismissable: false);
+
+    public string ShowPersistent(string text, MessageSeverity severity = MessageSeverity.Info, bool dismissable = true) =>
+        Show(text, severity, timeoutSeconds: null, dismissable: dismissable);
 
     public void Dismiss(string id)
     {
@@ -136,18 +171,19 @@ public class MessageBar
                 MessageSeverity.Success => $"[{ColorScheme.SuccessMarkup}]✓[/]",
                 MessageSeverity.Warning => $"[{ColorScheme.FlaggedMarkup}]⚠[/]",
                 MessageSeverity.Error   => $"[{ColorScheme.ErrorMarkup}]✗[/]",
-                _                       => $"[{ColorScheme.PrimaryMarkup}]ℹ[/]"
+                _                       => $"[{ColorScheme.PrimaryMarkup}]⟳[/]"
             };
 
             var textColor = msg.Severity switch
             {
                 MessageSeverity.Error => ColorScheme.ErrorMarkup,
                 MessageSeverity.Warning => ColorScheme.FlaggedMarkup,
+                MessageSeverity.Success => ColorScheme.SuccessMarkup,
                 _ => ColorScheme.MutedMarkup
             };
 
-            var dismiss = msg.Dismissable ? $" [{ColorScheme.MutedMarkup}](click to dismiss)[/]" : "";
-            lines.Add($"{icon} [{textColor}]{MarkupParser.Escape(msg.Text)}[/]{dismiss}");
+            var suffix = msg.Dismissable ? $" [{ColorScheme.MutedMarkup}](click to dismiss)[/]" : "";
+            lines.Add($"{icon} [{textColor}]{MarkupParser.Escape(msg.Text)}[/]{suffix}");
         }
 
         _control.SetContent(lines);
