@@ -29,6 +29,7 @@ public class CXPostApp : IDisposable
     private readonly SearchCoordinator _searchCoordinator;
     private readonly NotificationCoordinator _notificationCoordinator;
     private readonly Components.StatusBarBuilder _statusBar;
+    private readonly Components.HelpBar _helpBar;
     private readonly ConcurrentQueue<Action> _pendingUiActions = new();
     private readonly CancellationTokenSource _cts = new();
 
@@ -73,6 +74,7 @@ public class CXPostApp : IDisposable
         _searchCoordinator = searchCoordinator;
         _notificationCoordinator = notificationCoordinator;
         _statusBar = new Components.StatusBarBuilder();
+        _helpBar = new Components.HelpBar(marginLeft: 1);
         _config = configService.Load();
         _currentLayout = _config.Layout;
     }
@@ -181,11 +183,18 @@ public class CXPostApp : IDisposable
             .WithColor(ColorScheme.BorderColor)
             .Build();
 
-        // ── Bottom status bar ────────────────────────────────────────────────
+        // ── Bottom status bar (clickable help bar) ─────────────────────────
 
         var bottomHelpControl = _statusBar.BottomLeftControl;
         bottomHelpControl.HorizontalAlignment = HorizontalAlignment.Left;
         bottomHelpControl.Margin = new Margin(1, 0, 1, 0);
+
+        // Wire mouse clicks on the bottom bar to the HelpBar
+        bottomHelpControl.MouseClick += (_, e) =>
+        {
+            if (_helpBar.HandleClick(e.Position.X))
+                e.Handled = true;
+        };
 
         var bottomRule = Controls.RuleBuilder()
             .StickyBottom()
@@ -251,8 +260,36 @@ public class CXPostApp : IDisposable
 
     private void UpdateHelpBar()
     {
-        _statusBar.UpdateHelpBar(
-            "[grey50]Ctrl+N[/]: Compose  [grey50]Ctrl+R[/]: Reply  [grey50]Ctrl+S[/]: Search  [grey50]Del[/]: Delete  [grey50]Ctrl+M[/]: Move  [grey50]F5[/]: Sync");
+        _helpBar.Clear();
+
+        var hasMessage = GetSelectedMessage() != null;
+        var hasFolder = _messageListCoordinator.CurrentFolder != null;
+
+        // Inbox / message list context
+        _helpBar.Add("\u2191\u2193", "Navigate");
+        _helpBar.Add("Ctrl+N", "Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
+
+        if (hasMessage)
+        {
+            _helpBar.Add("Ctrl+R", "Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
+            _helpBar.Add("Ctrl+F", "Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
+            _helpBar.Add("Ctrl+U", "Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
+            _helpBar.Add("Ctrl+D", "Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
+            _helpBar.Add("Del", "Delete", () => SimulateKey(ConsoleKey.Delete));
+            _helpBar.Add("Ctrl+M", "Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
+        }
+
+        _helpBar.Add("Ctrl+S", "Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
+        _helpBar.Add("F5", "Sync", () => SimulateKey(ConsoleKey.F5));
+
+        _statusBar.UpdateHelpBar(_helpBar.Render());
+    }
+
+    private void SimulateKey(ConsoleKey key, bool ctrl = false, bool shift = false)
+    {
+        var keyInfo = new ConsoleKeyInfo('\0', key, shift, false, ctrl);
+        var args = new KeyPressedEventArgs(keyInfo, false);
+        OnKeyPressed(this, args);
     }
 
     private async Task ShowFirstRunSetupAsync()
@@ -409,6 +446,8 @@ public class CXPostApp : IDisposable
 
             // Update right panel header
             _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({messages.Count})[/]"]);
+
+            UpdateHelpBar();
         }
     }
 
@@ -450,6 +489,7 @@ public class CXPostApp : IDisposable
         if (row?.Tag is not MailMessage msg) return;
 
         ShowMessagePreview(msg);
+        UpdateHelpBar();
     }
 
     private void OnMessageActivated(object? sender, int rowIndex)
