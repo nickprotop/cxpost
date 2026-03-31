@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CXPost.Tests/CXPost.Tests.csproj" />
+  <Project Path="CXPost/CXPost.csproj" />
+</Solution>
