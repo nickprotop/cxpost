@@ -151,8 +151,47 @@ public class CXPostApp : IDisposable
         // Populate folder tree with cached data
         PopulateFolderTree();
 
-        // Start background sync for all configured accounts
-        StartBackgroundSync();
+        // First-run: if no accounts configured, prompt for account setup
+        if (_config.Accounts.Count == 0)
+        {
+            _ = Task.Run(async () =>
+            {
+                // Small delay to let the window system fully initialize
+                await Task.Delay(200, _cts.Token);
+                await ShowFirstRunSetupAsync();
+            }, _cts.Token);
+        }
+        else
+        {
+            // Start background sync for all configured accounts
+            StartBackgroundSync();
+        }
+    }
+
+    private async Task ShowFirstRunSetupAsync()
+    {
+        var dialog = new AccountSetupDialog();
+        var account = await dialog.ShowAsync(_ws);
+        if (account != null)
+        {
+            // Store the password
+            var password = dialog.GetPassword();
+            if (!string.IsNullOrEmpty(password))
+                _credentialService.StorePassword(account.Id, password);
+
+            // Save account to config
+            _config.Accounts.Add(account);
+            _configService.Save(_config);
+
+            // Refresh UI and start sync
+            EnqueueUiAction(() =>
+            {
+                PopulateFolderTree();
+                _notificationCoordinator.NotifySendSuccess($"Account {account.Name} added");
+            });
+
+            StartBackgroundSync();
+        }
     }
 
     private void StartBackgroundSync()
