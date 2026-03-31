@@ -648,8 +648,7 @@ public class CXPostApp : IDisposable
         _dashboardPanel.Visible = true;
 
         // Keep focus on folder tree
-        if (_folderTree is IFocusableControl focusable)
-            focusable.RequestFocus();
+        _mainWindow?.FocusManager?.SetFocus(_folderTree as IFocusableControl, FocusReason.Programmatic);
     }
 
     public void RefreshFolderTree() => PopulateFolderTree();
