@@ -153,7 +153,8 @@ public class ImapService : IImapService, IDisposable
         await folder.CloseAsync(false, ct);
         await client.DisconnectAsync(true, ct);
 
-        return message.TextBody ?? message.HtmlBody;
+        // Prefer HTML (we render it as rich markup), fall back to plain text
+        return message.HtmlBody ?? message.TextBody;
     }
 
     public async Task SetFlagsAsync(string folderPath, uint uid, bool? isRead = null, bool? isFlagged = null, CancellationToken ct = default)

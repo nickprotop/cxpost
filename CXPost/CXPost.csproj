@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.4.0" />
     <ProjectReference Include="../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
     <PackageReference Include="MailKit" Version="4.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.*" />

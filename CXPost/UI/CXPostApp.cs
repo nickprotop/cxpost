@@ -593,7 +593,24 @@ public class CXPostApp : IDisposable
             // Rule separator between headers and body
             lines.Add($"  [grey23]{"".PadRight(60, '\u2500')}[/]");
             lines.Add("");
-            lines.AddRange(msg.BodyPlain.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}"));
+
+            var body = msg.BodyPlain;
+            var isHtml = body.Contains("<html", StringComparison.OrdinalIgnoreCase)
+                      || body.Contains("<body", StringComparison.OrdinalIgnoreCase)
+                      || body.Contains("<div", StringComparison.OrdinalIgnoreCase)
+                      || body.Contains("<p>", StringComparison.OrdinalIgnoreCase);
+
+            if (isHtml)
+            {
+                // Convert HTML to rich ConsoleEx markup
+                var markup = Components.HtmlToMarkup.Convert(body);
+                lines.AddRange(markup.Split('\n').Select(l => $"  {l}"));
+            }
+            else
+            {
+                // Plain text — escape markup and display
+                lines.AddRange(body.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}"));
+            }
         }
         else
         {
