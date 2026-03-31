@@ -414,21 +414,26 @@ public class CXPostApp : IDisposable
             var folders = _cacheService.GetFolders(account.Id);
             foreach (var folder in folders.OrderBy(f => FolderSortKey(f.DisplayName)).ThenBy(f => f.Path))
             {
+                // Skip virtual container folders (e.g. [Gmail])
+                if (folder.DisplayName.StartsWith("[") && folder.DisplayName.EndsWith("]"))
+                    continue;
+
                 var icon = GetFolderIcon(folder.DisplayName);
 
-                // Count unread from cache if server count is 0
-                var unread = folder.UnreadCount;
-                if (unread == 0 && folder.DisplayName.Contains("Inbox", StringComparison.OrdinalIgnoreCase))
-                {
-                    var msgs = _cacheService.GetMessages(folder.Id);
-                    unread = msgs.Count(m => !m.IsRead);
-                }
+                // Always count unread from cached messages (server count is unreliable)
+                var msgs = _cacheService.GetMessages(folder.Id);
+                var unread = msgs.Count(m => !m.IsRead);
+                var total = msgs.Count;
 
                 totalUnread += unread;
 
-                var text = unread > 0
-                    ? $"{icon} {MarkupParser.Escape(folder.DisplayName)} [yellow]({unread})[/]"
-                    : $"[grey70]{icon} {MarkupParser.Escape(folder.DisplayName)}[/]";
+                string text;
+                if (unread > 0)
+                    text = $"{icon} {MarkupParser.Escape(folder.DisplayName)} [yellow]({unread})[/]";
+                else if (total > 0)
+                    text = $"{icon} {MarkupParser.Escape(folder.DisplayName)} [grey35]({total})[/]";
+                else
+                    text = $"[grey70]{icon} {MarkupParser.Escape(folder.DisplayName)}[/]";
 
                 var node = accountNode.AddChild(text);
                 node.Tag = folder;
