@@ -508,18 +508,34 @@ public class CXPostApp : IDisposable
 
     private void OnMessageSelected(object? sender, int rowIndex)
     {
-        // Preview in reading pane (headers only if body not fetched)
         if (_messageTable == null || rowIndex < 0) return;
         var row = _messageTable.GetRow(rowIndex);
         if (row?.Tag is not MailMessage msg) return;
 
+        // Show what we have immediately (headers + cached body or "Loading...")
         ShowMessagePreview(msg);
         UpdateHelpBar();
+
+        // Fetch body in background if not cached
+        if (!msg.BodyFetched)
+        {
+            _messageListCoordinator.SelectMessage(msg);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _messageListCoordinator.FetchAndShowBodyAsync(msg, _cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    EnqueueUiAction(() => ShowError($"Failed to load message: {ex.Message}"));
+                }
+            }, _cts.Token);
+        }
     }
 
     private void OnMessageActivated(object? sender, int rowIndex)
     {
-        // Full message view -- trigger body fetch if needed
         OnMessageSelected(sender, rowIndex);
     }
 
