@@ -93,8 +93,7 @@ public class CXPostApp : IDisposable
         // Folder tree
         _folderTree = Controls.Tree()
             .WithGuide(TreeGuide.Line)
-            .WithHighlightColors(Color.White, ColorScheme.SelectedRow)
-            .WithBackgroundColor(ColorScheme.SidebarBackground)
+            .WithHighlightColors(Color.White, Color.Grey30)
             .WithForegroundColor(ColorScheme.SecondaryText)
             .WithMargin(1, 1, 1, 0)
             .Build();
@@ -157,10 +156,6 @@ public class CXPostApp : IDisposable
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
-
-        // Set column background colors
-        if (_mainGrid.Columns.Count > 0)
-            _mainGrid.Columns[0].BackgroundColor = ColorScheme.SidebarBackground;
 
         // ── Top status bar ───────────────────────────────────────────────────
 
@@ -485,19 +480,44 @@ public class CXPostApp : IDisposable
     {
         if (args.Node?.Tag is MailFolder folder)
         {
-            // Set current folder on the coordinator so body fetch works
+            // Single folder selected
             _messageListCoordinator.SelectFolder(folder);
 
             var messages = _cacheService.GetMessages(folder.Id);
             PopulateMessageList(messages);
 
-            // Find account for breadcrumb
             var account = _config.Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
             _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName);
-
-            // Update right panel header
             _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({messages.Count})[/]"]);
 
+            ClearReadingPane();
+            UpdateHelpBar();
+        }
+        else if (args.Node?.TextColor == ColorScheme.PrimaryText)
+        {
+            // "All Inboxes" — aggregate all inbox folders
+            var allMessages = new List<MailMessage>();
+            foreach (var account in _config.Accounts)
+            {
+                var folders = _cacheService.GetFolders(account.Id);
+                var inbox = folders.FirstOrDefault(f =>
+                    f.DisplayName.Equals("INBOX", StringComparison.OrdinalIgnoreCase) ||
+                    f.DisplayName.Equals("Inbox", StringComparison.OrdinalIgnoreCase));
+                if (inbox != null)
+                {
+                    _messageListCoordinator.SelectFolder(inbox);
+                    allMessages.AddRange(_cacheService.GetMessages(inbox.Id));
+                }
+            }
+
+            // Sort all messages by date desc
+            allMessages.Sort((a, b) => b.Date.CompareTo(a.Date));
+            PopulateMessageList(allMessages);
+
+            _statusBar.UpdateBreadcrumb("All Accounts", "Inbox");
+            _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({allMessages.Count})[/]"]);
+
+            ClearReadingPane();
             UpdateHelpBar();
         }
     }
@@ -627,6 +647,11 @@ public class CXPostApp : IDisposable
         // Update right header with scroll hint
         if (_readingPane != null && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
             _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]"]);
+    }
+
+    public void ClearReadingPane()
+    {
+        _readingContent?.SetContent([$"  [{ColorScheme.MutedMarkup}]Select a message to read[/]"]);
     }
 
     private MailMessage? GetSelectedMessage()
@@ -787,6 +812,16 @@ public class CXPostApp : IDisposable
                     try
                     {
                         await _messageListCoordinator.DeleteMessageAsync(_cts.Token);
+                        EnqueueUiAction(() =>
+                        {
+                            // Select next message or clear reading pane
+                            var nextMsg = GetSelectedMessage();
+                            if (nextMsg != null)
+                                ShowMessagePreview(nextMsg);
+                            else
+                                ClearReadingPane();
+                            UpdateHelpBar();
+                        });
                     }
                     catch (Exception ex)
                     {
