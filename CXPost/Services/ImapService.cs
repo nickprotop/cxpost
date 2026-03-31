@@ -127,12 +127,31 @@ public class ImapService : IImapService, IDisposable
 
     public async Task<string?> FetchBodyAsync(string folderPath, uint uid, CancellationToken ct = default)
     {
-        EnsureConnected();
-        var folder = await _client!.GetFolderAsync(folderPath, ct);
+        // Use a separate connection for body fetch to avoid conflicting
+        // with the main connection (which may be in IDLE or syncing)
+        if (_account == null)
+            throw new InvalidOperationException("No account configured. Call ConnectAsync first.");
+
+        using var client = new ImapClient();
+        var socketOptions = _account.ImapSecurity switch
+        {
+            SecurityType.Ssl => SecureSocketOptions.SslOnConnect,
+            SecurityType.StartTls => SecureSocketOptions.StartTls,
+            _ => SecureSocketOptions.None
+        };
+        await client.ConnectAsync(_account.ImapHost, _account.ImapPort, socketOptions, ct);
+
+        var password = _credentials.GetPassword(_account.Id) ?? string.Empty;
+        await client.AuthenticateAsync(
+            _account.Username.Length > 0 ? _account.Username : _account.Email,
+            password, ct);
+
+        var folder = await client.GetFolderAsync(folderPath, ct);
         await folder.OpenAsync(FolderAccess.ReadOnly, ct);
 
         var message = await folder.GetMessageAsync(new UniqueId(uid), ct);
         await folder.CloseAsync(false, ct);
+        await client.DisconnectAsync(true, ct);
 
         return message.TextBody ?? message.HtmlBody;
     }

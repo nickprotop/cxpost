@@ -1,47 +1,39 @@
-using SharpConsoleUI;
-using SharpConsoleUI.Core;
+using CXPost.UI;
+using CXPost.UI.Components;
 
 namespace CXPost.Coordinators;
 
 public class NotificationCoordinator
 {
-    private readonly ConsoleWindowSystem _ws;
+    private readonly Lazy<CXPostApp> _app;
 
-    public NotificationCoordinator(ConsoleWindowSystem ws)
+    public NotificationCoordinator(Lazy<CXPostApp> app)
     {
-        _ws = ws;
+        _app = app;
     }
 
-    public string NotifyNewMail(string from, string subject) =>
-        _ws.NotificationStateService.ShowNotification(
-            "📬 New Mail",
-            $"From: {from}\n{subject}",
-            NotificationSeverity.Info,
-            timeout: 5000);
+    public void NotifyNewMail(string from, string subject) =>
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.ShowInfo($"📬 New mail from {from}: {subject}"));
 
-    public string NotifySendSuccess(string to) =>
-        _ws.NotificationStateService.ShowNotification(
-            "✉ Sent",
-            $"Message sent to {to}",
-            NotificationSeverity.Success,
-            timeout: 3000);
+    public void NotifySendSuccess(string to) =>
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.ShowSuccess($"✉ Message sent to {to}"));
 
-    public string NotifySyncComplete(string accountName, int newMessages)
+    public void NotifySyncComplete(string accountName, int newMessages)
     {
         var msg = newMessages > 0
-            ? $"{newMessages} new message{(newMessages != 1 ? "s" : "")}"
-            : "Up to date";
-        return _ws.NotificationStateService.ShowNotification(
-            $"⟳ {accountName}",
-            msg,
-            NotificationSeverity.Success,
-            timeout: 4000);
+            ? $"⟳ {accountName}: {newMessages} new message{(newMessages != 1 ? "s" : "")}"
+            : $"⟳ {accountName}: Up to date";
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.ShowSuccess(msg));
     }
 
-    public string NotifyError(string title, string message) =>
-        _ws.NotificationStateService.ShowNotification(
-            $"✗ {title}", message, NotificationSeverity.Danger, timeout: 8000);
+    public void NotifyError(string title, string message) =>
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.ShowError($"{title}: {message}"));
 
     public void Dismiss(string id) =>
-        _ws.NotificationStateService.DismissNotification(id);
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.DismissMessage(id));
 }
