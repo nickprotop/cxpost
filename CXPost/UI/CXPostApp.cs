@@ -49,6 +49,9 @@ public class CXPostApp : IDisposable
     private MarkupControl? _leftPanelHeader;
     private MarkupControl? _rightPanelHeader;
 
+    // Message bar
+    private Components.MessageBar? _messageBar;
+
     public CXPostApp(
         ConsoleWindowSystem ws,
         IConfigService configService,
@@ -196,6 +199,9 @@ public class CXPostApp : IDisposable
                 e.Handled = true;
         };
 
+        // Message bar (stacking transient messages)
+        _messageBar = new Components.MessageBar();
+
         var bottomRule = Controls.RuleBuilder()
             .StickyBottom()
             .WithColor(ColorScheme.BorderColor)
@@ -215,7 +221,9 @@ public class CXPostApp : IDisposable
 
         _mainWindow = new WindowBuilder(_ws)
             .HideTitle()
-            .Borderless()
+            .HideTitleButtons()
+            .WithBorderStyle(BorderStyle.Rounded)
+            .WithBorderColor(Color.Grey27)
             .Maximized()
             .Movable(false)
             .Resizable(false)
@@ -225,6 +233,8 @@ public class CXPostApp : IDisposable
             .AddControl(topStatusBar)
             .AddControl(topRule)
             .AddControl(_mainGrid)
+            .AddControl(_messageBar.Rule)
+            .AddControl(_messageBar.Control)
             .AddControl(bottomRule)
             .AddControl(bottomBar)
             .WithAsyncWindowThread(MainLoopAsync)
@@ -362,8 +372,9 @@ public class CXPostApp : IDisposable
                 while (_pendingUiActions.TryDequeue(out var action))
                     action();
 
-                // Update clock in top-right status bar
+                // Update clock and expire transient messages
                 UpdateClockDisplay();
+                _messageBar?.Tick();
 
                 await Task.Delay(1000, ct);
             }
@@ -453,11 +464,18 @@ public class CXPostApp : IDisposable
 
     public void RefreshFolderTree() => PopulateFolderTree();
 
-    public void ShowError(string message)
-    {
-        _ws.NotificationStateService.ShowNotification(
-            "Error", message, SharpConsoleUI.Core.NotificationSeverity.Danger, timeout: 5000);
-    }
+    public void ShowError(string message) => _messageBar?.ShowError(message);
+
+    public void ShowSuccess(string message) => _messageBar?.ShowSuccess(message);
+
+    public void ShowInfo(string message) => _messageBar?.ShowInfo(message);
+
+    public void ShowWarning(string message) => _messageBar?.ShowWarning(message);
+
+    public string? ShowPersistent(string message, MessageSeverity severity = MessageSeverity.Info) =>
+        _messageBar?.ShowPersistent(message, severity);
+
+    public void DismissMessage(string id) => _messageBar?.Dismiss(id);
 
     public void PopulateMessageList(List<MailMessage> messages)
     {

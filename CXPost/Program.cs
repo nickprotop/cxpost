@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using SharpConsoleUI;
+using SharpConsoleUI.Configuration;
 using SharpConsoleUI.Drivers;
 using CXPost.Coordinators;
 using CXPost.Data;
@@ -53,7 +54,12 @@ public class Program
             var services = new ServiceCollection();
 
             // Window system
-            var ws = new ConsoleWindowSystem(new NetConsoleDriver(RenderMode.Buffer));
+            var driver = new NetConsoleDriver(RenderMode.Buffer);
+            var ws = new ConsoleWindowSystem(
+                driver,
+                options: new ConsoleWindowSystemOptions(
+                    ShowTopPanel: false,
+                    ShowBottomPanel: false));
             services.AddSingleton(ws);
 
             // Repositories
