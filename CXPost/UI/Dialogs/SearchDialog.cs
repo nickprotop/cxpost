@@ -13,7 +13,7 @@ public class SearchDialog : DialogBase<string?>
     private PromptControl? _searchField;
 
     protected override string GetTitle() => "Search Messages";
-    protected override (int width, int height) GetSize() => (60, 8);
+    protected override (int width, int height) GetSize() => (60, 10);
     protected override bool GetResizable() => false;
     protected override string? GetDefaultResult() => null;
 
@@ -27,9 +27,37 @@ public class SearchDialog : DialogBase<string?>
         _searchField.HorizontalAlignment = HorizontalAlignment.Stretch;
         Modal.AddControl(_searchField);
 
-        var help = Controls.Markup($"[{ColorScheme.MutedMarkup}]Enter: Search  |  Esc: Cancel[/]").Build();
-        help.StickyPosition = StickyPosition.Bottom;
-        Modal.AddControl(help);
+        // Rule before buttons
+        Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{"─".PadRight(56, '─')}[/]")
+            .StickyBottom()
+            .Build());
+
+        // Button row
+        var searchButton = Controls.Button("[grey93]  Search (Enter)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .WithFocusedBackgroundColor(Color.DarkGreen)
+            .OnClick((s, e) =>
+            {
+                var query = _searchField?.Input?.Trim();
+                if (!string.IsNullOrEmpty(query))
+                    CloseWithResult(query);
+            })
+            .Build();
+
+        var cancelButton = Controls.Button("[grey93]  Cancel (Esc)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .OnClick((s, e) => CloseWithResult(null))
+            .Build();
+
+        var buttonGrid = Controls.HorizontalGrid()
+            .WithAlignment(HorizontalAlignment.Center)
+            .StickyBottom()
+            .Column(col => col.Add(searchButton))
+            .Column(col => col.Width(2))
+            .Column(col => col.Add(cancelButton))
+            .Build();
+        buttonGrid.Margin = new Margin(0, 1, 0, 0);
+        Modal.AddControl(buttonGrid);
     }
 
     protected override void SetInitialFocus() => _searchField?.RequestFocus();

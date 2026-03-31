@@ -86,10 +86,51 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 
         // Help text
         var helpText = Controls.Markup(
-            $"[{ColorScheme.MutedMarkup}]Ctrl+Enter: Send  |  Ctrl+S: Save Draft  |  Esc: Discard[/]")
+            $"[{ColorScheme.MutedMarkup}]S: Send  |  Esc: Discard[/]")
+            .WithAlignment(HorizontalAlignment.Center)
+            .StickyBottom()
             .Build();
-        helpText.StickyPosition = StickyPosition.Bottom;
         Modal.AddControl(helpText);
+
+        // Rule before buttons
+        Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{"─".PadRight(76, '─')}[/]")
+            .StickyBottom()
+            .Build());
+
+        // Button row
+        var sendButton = Controls.Button("[grey93]  Send (S)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .WithFocusedBackgroundColor(Color.DarkGreen)
+            .OnClick((s, e) => TrySend())
+            .Build();
+
+        var discardButton = Controls.Button("[grey93]  Discard (Esc)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .OnClick((s, e) => CloseWithResult(null))
+            .Build();
+
+        var buttonGrid = Controls.HorizontalGrid()
+            .WithAlignment(HorizontalAlignment.Center)
+            .StickyBottom()
+            .Column(col => col.Add(sendButton))
+            .Column(col => col.Width(2))
+            .Column(col => col.Add(discardButton))
+            .Build();
+        buttonGrid.Margin = new Margin(0, 1, 0, 0);
+        Modal.AddControl(buttonGrid);
+    }
+
+    private void TrySend()
+    {
+        var to = _toField?.Input ?? "";
+        if (string.IsNullOrWhiteSpace(to))
+            return;
+
+        CloseWithResult(new ComposeResult(
+            To: to,
+            Cc: string.IsNullOrWhiteSpace(_ccField?.Input) ? null : _ccField.Input,
+            Subject: _subjectField?.Input ?? "",
+            Body: _bodyEditor?.Content ?? ""));
     }
 
     protected override void SetInitialFocus()
@@ -102,26 +143,23 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 
     protected override void OnKeyPressed(object? sender, KeyPressedEventArgs e)
     {
-        var ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
-
-        if (ctrl && e.KeyInfo.Key == ConsoleKey.Enter)
+        if (e.KeyInfo.Key == ConsoleKey.S && !IsEditing())
         {
-            // Send
-            var to = _toField?.Input ?? "";
-            if (string.IsNullOrWhiteSpace(to))
-                return; // Don't send without recipient
-
-            CloseWithResult(new ComposeResult(
-                To: to,
-                Cc: string.IsNullOrWhiteSpace(_ccField?.Input) ? null : _ccField.Input,
-                Subject: _subjectField?.Input ?? "",
-                Body: _bodyEditor?.Content ?? ""));
-
+            TrySend();
             e.Handled = true;
         }
         else
         {
             base.OnKeyPressed(sender, e);
         }
+    }
+
+    private bool IsEditing()
+    {
+        // Don't intercept 'S' when user is typing in a field
+        return _bodyEditor?.IsEditing == true
+            || _toField?.HasFocus == true
+            || _ccField?.HasFocus == true
+            || _subjectField?.HasFocus == true;
     }
 }

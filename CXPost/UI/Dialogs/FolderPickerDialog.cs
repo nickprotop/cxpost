@@ -37,9 +37,37 @@ public class FolderPickerDialog : DialogBase<MailFolder?>
         _folderList.VerticalAlignment = VerticalAlignment.Fill;
         Modal.AddControl(_folderList);
 
-        var help = Controls.Markup($"[{ColorScheme.MutedMarkup}]Enter: Select  |  Esc: Cancel[/]").Build();
-        help.StickyPosition = StickyPosition.Bottom;
-        Modal.AddControl(help);
+        // Rule before buttons
+        Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{"─".PadRight(36, '─')}[/]")
+            .StickyBottom()
+            .Build());
+
+        // Button row
+        var selectButton = Controls.Button("[grey93]  Select (Enter)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .WithFocusedBackgroundColor(Color.DarkGreen)
+            .OnClick((s, e) =>
+            {
+                var idx = _folderList?.SelectedIndex ?? -1;
+                if (idx >= 0 && idx < _folders.Count)
+                    CloseWithResult(_folders[idx]);
+            })
+            .Build();
+
+        var cancelButton = Controls.Button("[grey93]  Cancel (Esc)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .OnClick((s, e) => CloseWithResult(null))
+            .Build();
+
+        var buttonGrid = Controls.HorizontalGrid()
+            .WithAlignment(HorizontalAlignment.Center)
+            .StickyBottom()
+            .Column(col => col.Add(selectButton))
+            .Column(col => col.Width(2))
+            .Column(col => col.Add(cancelButton))
+            .Build();
+        buttonGrid.Margin = new Margin(0, 1, 0, 0);
+        Modal.AddControl(buttonGrid);
     }
 
     protected override void SetInitialFocus() => _folderList?.RequestFocus();

@@ -50,30 +50,61 @@ public class AccountSetupDialog : DialogBase<Account?>
         if (_passwordField != null)
             _passwordField.MaskCharacter = '*';
 
-        var help = Controls.Markup(
-            $"[{ColorScheme.MutedMarkup}]Ctrl+Enter: Save  |  Esc: Cancel[/]").Build();
-        help.StickyPosition = StickyPosition.Bottom;
-        Modal.AddControl(help);
+        // Help text
+        Modal.AddControl(Controls.Markup(
+            $"[{ColorScheme.MutedMarkup}]Enter: Save  |  Esc: Cancel[/]")
+            .WithAlignment(HorizontalAlignment.Center)
+            .StickyBottom()
+            .Build());
+
+        // Rule before buttons
+        Modal.AddControl(Controls.Markup($"[{ColorScheme.MutedMarkup}]{"─".PadRight(56, '─')}[/]")
+            .StickyBottom()
+            .Build());
+
+        // Button row
+        var saveButton = Controls.Button("[grey93]  Save (Enter)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .WithFocusedBackgroundColor(Color.DarkGreen)
+            .OnClick((s, e) => TrySave())
+            .Build();
+
+        var cancelButton = Controls.Button("[grey93]  Cancel (Esc)  [/]")
+            .WithBackgroundColor(Color.Grey30)
+            .OnClick((s, e) => CloseWithResult(null))
+            .Build();
+
+        var buttonGrid = Controls.HorizontalGrid()
+            .WithAlignment(HorizontalAlignment.Center)
+            .StickyBottom()
+            .Column(col => col.Add(saveButton))
+            .Column(col => col.Width(2))
+            .Column(col => col.Add(cancelButton))
+            .Build();
+        buttonGrid.Margin = new Margin(0, 1, 0, 0);
+        Modal.AddControl(buttonGrid);
+    }
+
+    private void TrySave()
+    {
+        var account = _existing ?? new Account();
+        account.Name = _nameField?.Input ?? "";
+        account.Email = _emailField?.Input ?? "";
+        account.ImapHost = _imapHostField?.Input ?? "";
+        account.ImapPort = int.TryParse(_imapPortField?.Input, out var ip) ? ip : 993;
+        account.SmtpHost = _smtpHostField?.Input ?? "";
+        account.SmtpPort = int.TryParse(_smtpPortField?.Input, out var sp) ? sp : 587;
+        account.Username = account.Email;
+        CloseWithResult(account);
     }
 
     protected override void SetInitialFocus() => _nameField?.RequestFocus();
 
     protected override void OnKeyPressed(object? sender, KeyPressedEventArgs e)
     {
-        if (e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control) && e.KeyInfo.Key == ConsoleKey.Enter)
+        if (e.KeyInfo.Key == ConsoleKey.Enter)
         {
-            var account = _existing ?? new Account();
-            account.Name = _nameField?.Input ?? "";
-            account.Email = _emailField?.Input ?? "";
-            account.ImapHost = _imapHostField?.Input ?? "";
-            account.ImapPort = int.TryParse(_imapPortField?.Input, out var ip) ? ip : 993;
-            account.SmtpHost = _smtpHostField?.Input ?? "";
-            account.SmtpPort = int.TryParse(_smtpPortField?.Input, out var sp) ? sp : 587;
-            account.Username = account.Email;
-
-            // Password stored separately via CredentialService
-            // The caller handles this
-            CloseWithResult(account);
+            TrySave();
             e.Handled = true;
         }
         else
