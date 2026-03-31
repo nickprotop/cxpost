@@ -7,7 +7,9 @@ public static class ColorScheme
     // Backgrounds
     public static readonly Color WindowBackground = Color.Grey11;
     public static readonly Color PanelBackground = Color.Grey15;
+    public static readonly Color StatusBarBackground = Color.Grey15;
     public static readonly Color HeaderBackground = Color.Grey19;
+    public static readonly Color SidebarBackground = Color.Grey19;
 
     // Borders
     public static readonly Color BorderColor = Color.Grey23;

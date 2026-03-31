@@ -3,8 +3,10 @@ using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Events;
+using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
+using SharpConsoleUI.Rendering;
 using CXPost.Coordinators;
 using CXPost.Models;
 using CXPost.Services;
@@ -40,6 +42,11 @@ public class CXPostApp : IDisposable
     private ScrollablePanelControl? _readingPane;
     private MarkupControl? _readingContent;
     private HorizontalGridControl? _mainGrid;
+
+    // Status bar controls
+    private MarkupControl? _topStatusRight;
+    private MarkupControl? _leftPanelHeader;
+    private MarkupControl? _rightPanelHeader;
 
     public CXPostApp(
         ConsoleWindowSystem ws,
@@ -82,8 +89,9 @@ public class CXPostApp : IDisposable
         _folderTree = Controls.Tree()
             .WithGuide(TreeGuide.Line)
             .WithHighlightColors(Color.White, ColorScheme.SelectedRow)
-            .WithBackgroundColor(ColorScheme.WindowBackground)
+            .WithBackgroundColor(ColorScheme.SidebarBackground)
             .WithForegroundColor(ColorScheme.SecondaryText)
+            .WithMargin(1, 1, 1, 0)
             .Build();
 
         _folderTree.SelectedNodeChanged += OnFolderSelected;
@@ -118,11 +126,24 @@ public class CXPostApp : IDisposable
             .WithMinHeights(5, 5)
             .Build();
 
-        // Build layout
+        // Panel headers
+        _leftPanelHeader = Controls.Markup("[grey70]Folders[/]")
+            .WithMargin(1, 0, 0, 0)
+            .Build();
+
+        _rightPanelHeader = Controls.Markup("[grey70]Messages[/]")
+            .WithMargin(1, 0, 0, 0)
+            .Build();
+
+        // Build main grid - 2 panels
         _mainGrid = Controls.HorizontalGrid()
-            .Column(col => col.Width(28).Add(_folderTree))
+            .Column(col => col
+                .Width(28)
+                .Add(_leftPanelHeader)
+                .Add(_folderTree))
             .Column(col =>
             {
+                col.Add(_rightPanelHeader);
                 col.Add(_messageTable);
                 col.Add(listReadingSplitter);
                 col.Add(_readingPane);
@@ -132,6 +153,57 @@ public class CXPostApp : IDisposable
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
 
+        // Set column background colors
+        if (_mainGrid.Columns.Count > 0)
+            _mainGrid.Columns[0].BackgroundColor = ColorScheme.SidebarBackground;
+
+        // ── Top status bar ───────────────────────────────────────────────────
+
+        var topStatusLeft = _statusBar.TopLeftControl;
+        topStatusLeft.HorizontalAlignment = HorizontalAlignment.Left;
+        topStatusLeft.Margin = new Margin(1, 0, 0, 0);
+
+        _topStatusRight = _statusBar.TopRightControl;
+        _topStatusRight.HorizontalAlignment = HorizontalAlignment.Right;
+        _topStatusRight.Margin = new Margin(0, 0, 1, 0);
+
+        var topStatusBar = Controls.HorizontalGrid()
+            .StickyTop()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Column(col => col.Add(topStatusLeft))
+            .Column(col => col.Add(_topStatusRight))
+            .Build();
+        topStatusBar.BackgroundColor = ColorScheme.PanelBackground;
+        topStatusBar.ForegroundColor = Color.Grey93;
+
+        var topRule = Controls.RuleBuilder()
+            .StickyTop()
+            .WithColor(ColorScheme.BorderColor)
+            .Build();
+
+        // ── Bottom status bar ────────────────────────────────────────────────
+
+        var bottomHelpControl = _statusBar.BottomLeftControl;
+        bottomHelpControl.HorizontalAlignment = HorizontalAlignment.Left;
+        bottomHelpControl.Margin = new Margin(1, 0, 1, 0);
+
+        var bottomRule = Controls.RuleBuilder()
+            .StickyBottom()
+            .WithColor(ColorScheme.BorderColor)
+            .Build();
+
+        var bottomBar = Controls.HorizontalGrid()
+            .StickyBottom()
+            .WithAlignment(HorizontalAlignment.Stretch)
+            .Column(col => col.Add(bottomHelpControl))
+            .Build();
+        bottomBar.BackgroundColor = ColorScheme.PanelBackground;
+        bottomBar.ForegroundColor = ColorScheme.SecondaryText;
+
+        // ── Build window with gradient background ────────────────────────────
+
+        var gradient = ColorGradient.FromColors(new Color(20, 25, 40), new Color(8, 8, 15));
+
         _mainWindow = new WindowBuilder(_ws)
             .HideTitle()
             .Borderless()
@@ -140,7 +212,12 @@ public class CXPostApp : IDisposable
             .Resizable(false)
             .Minimizable(false)
             .Maximizable(false)
+            .WithBackgroundGradient(gradient, GradientDirection.Vertical)
+            .AddControl(topStatusBar)
+            .AddControl(topRule)
             .AddControl(_mainGrid)
+            .AddControl(bottomRule)
+            .AddControl(bottomBar)
             .WithAsyncWindowThread(MainLoopAsync)
             .OnKeyPressed(OnKeyPressed)
             .Build();
@@ -150,6 +227,10 @@ public class CXPostApp : IDisposable
 
         // Populate folder tree with cached data
         PopulateFolderTree();
+
+        // Update initial status
+        _statusBar.UpdateConnectionStatus(0, false);
+        UpdateHelpBar();
 
         // First-run: if no accounts configured, prompt for account setup
         if (_config.Accounts.Count == 0)
@@ -166,6 +247,12 @@ public class CXPostApp : IDisposable
             // Start background sync for all configured accounts
             StartBackgroundSync();
         }
+    }
+
+    private void UpdateHelpBar()
+    {
+        _statusBar.UpdateHelpBar(
+            "[grey50]Ctrl+N[/]: Compose  [grey50]Ctrl+R[/]: Reply  [grey50]Ctrl+S[/]: Search  [grey50]Del[/]: Delete  [grey50]Ctrl+M[/]: Move  [grey50]F5[/]: Sync");
     }
 
     private async Task ShowFirstRunSetupAsync()
@@ -203,13 +290,29 @@ public class CXPostApp : IDisposable
                 try
                 {
                     await _syncCoordinator.SyncAccountAsync(account, _cts.Token);
+                    EnqueueUiAction(() => _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), true));
                 }
                 catch (Exception ex)
                 {
-                    EnqueueUiAction(() => ShowError($"Initial sync failed for {account.Name}: {ex.Message}"));
+                    EnqueueUiAction(() =>
+                    {
+                        _statusBar.UpdateConnectionStatus(0, false);
+                        ShowError($"Initial sync failed for {account.Name}: {ex.Message}");
+                    });
                 }
             }, _cts.Token);
         }
+    }
+
+    private int GetTotalUnreadCount()
+    {
+        var count = 0;
+        foreach (var account in _config.Accounts)
+        {
+            var folders = _cacheService.GetFolders(account.Id);
+            count += folders.Sum(f => f.UnreadCount);
+        }
+        return count;
     }
 
     private async Task MainLoopAsync(Window window, CancellationToken ct)
@@ -222,10 +325,28 @@ public class CXPostApp : IDisposable
                 while (_pendingUiActions.TryDequeue(out var action))
                     action();
 
-                await Task.Delay(80, ct);
+                // Update clock in top-right status bar
+                UpdateClockDisplay();
+
+                await Task.Delay(1000, ct);
             }
             catch (OperationCanceledException) { break; }
         }
+    }
+
+    private void UpdateClockDisplay()
+    {
+        if (_topStatusRight == null) return;
+
+        var time = DateTime.Now.ToString("h:mm tt");
+        var unreadCount = GetTotalUnreadCount();
+        var connected = _config.Accounts.Count > 0;
+
+        var status = connected
+            ? $"[{ColorScheme.FlaggedMarkup}]{unreadCount} unread[/] [grey50]|[/] [{ColorScheme.SuccessMarkup}]\u25cf Connected[/] [grey50]|[/] [grey70]{time}[/]"
+            : $"[{ColorScheme.ErrorMarkup}]\u25cf Offline[/] [grey50]|[/] [grey70]{time}[/]";
+
+        _topStatusRight.SetContent([status]);
     }
 
     public void PopulateFolderTree()
@@ -234,26 +355,40 @@ public class CXPostApp : IDisposable
         _folderTree.Clear();
 
         // "All Inboxes" virtual node
-        var allInboxes = _folderTree.AddRootNode("All Inboxes");
+        var allInboxes = _folderTree.AddRootNode("\U0001f4ec All Inboxes");
         allInboxes.TextColor = ColorScheme.PrimaryText;
 
         foreach (var account in _config.Accounts)
         {
-            var accountNode = _folderTree.AddRootNode(account.Name);
+            var accountNode = _folderTree.AddRootNode($"[grey50 bold]{MarkupParser.Escape(account.Name.ToUpperInvariant())}[/]");
             accountNode.TextColor = ColorScheme.MutedText;
             accountNode.Tag = account;
 
             var folders = _cacheService.GetFolders(account.Id);
             foreach (var folder in folders.OrderBy(f => f.Path))
             {
+                var icon = GetFolderIcon(folder.DisplayName);
                 var text = folder.UnreadCount > 0
-                    ? $"{folder.DisplayName} [yellow]({folder.UnreadCount})[/]"
-                    : folder.DisplayName;
+                    ? $"{icon} {MarkupParser.Escape(folder.DisplayName)} [yellow]({folder.UnreadCount})[/]"
+                    : $"[grey70]{icon} {MarkupParser.Escape(folder.DisplayName)}[/]";
 
                 var node = accountNode.AddChild(text);
                 node.Tag = folder;
             }
         }
+    }
+
+    private static string GetFolderIcon(string folderName)
+    {
+        var lower = folderName.ToLowerInvariant();
+        if (lower.Contains("inbox")) return "\U0001f4e5";
+        if (lower.Contains("sent")) return "\U0001f4e4";
+        if (lower.Contains("draft")) return "\u270f\ufe0f";
+        if (lower.Contains("trash") || lower.Contains("deleted")) return "\U0001f5d1\ufe0f";
+        if (lower.Contains("spam") || lower.Contains("junk")) return "\u26a0\ufe0f";
+        if (lower.Contains("archive")) return "\U0001f4e6";
+        if (lower.Contains("star") || lower.Contains("flagged")) return "\u2b50";
+        return "\U0001f4c1";
     }
 
     public void EnqueueUiAction(Action action)
@@ -271,6 +406,9 @@ public class CXPostApp : IDisposable
             // Find account for breadcrumb
             var account = _config.Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
             _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName);
+
+            // Update right panel header
+            _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({messages.Count})[/]"]);
         }
     }
 
@@ -289,7 +427,7 @@ public class CXPostApp : IDisposable
         _messageTable.ClearRows();
         foreach (var msg in messages)
         {
-            var star = msg.IsFlagged ? "[yellow]\u2605[/]" : "\u2606";
+            var star = msg.IsFlagged ? "[yellow]\u2605[/]" : "[grey35]\u2606[/]";
             var from = msg.IsRead
                 ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]"
                 : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]";
@@ -326,24 +464,32 @@ public class CXPostApp : IDisposable
 
         var lines = new List<string>
         {
-            $"[{ColorScheme.PrimaryMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]",
-            $"[{ColorScheme.MutedMarkup}]From:[/] {MarkupParser.Escape(msg.FromName ?? "")} <{MarkupParser.Escape(msg.FromAddress ?? "")}>",
-            $"[{ColorScheme.MutedMarkup}]Date:[/] {msg.Date:MMMM d, yyyy h:mm tt}",
-            $"[{ColorScheme.MutedMarkup}]To:[/] {MarkupParser.Escape(msg.ToAddresses ?? "")}",
+            "",
+            $"  [{ColorScheme.PrimaryMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]",
+            "",
+            $"  [{ColorScheme.MutedMarkup}]From:[/]  {MarkupParser.Escape(msg.FromName ?? "")} <{MarkupParser.Escape(msg.FromAddress ?? "")}>",
+            $"  [{ColorScheme.MutedMarkup}]Date:[/]  {msg.Date:MMMM d, yyyy h:mm tt}",
+            $"  [{ColorScheme.MutedMarkup}]To:[/]    {MarkupParser.Escape(msg.ToAddresses ?? "")}",
             ""
         };
 
         if (msg.BodyFetched && msg.BodyPlain != null)
         {
-            lines.Add("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
-            lines.AddRange(msg.BodyPlain.Split('\n').Select(MarkupParser.Escape));
+            // Rule separator between headers and body
+            lines.Add($"  [grey23]{"".PadRight(60, '\u2500')}[/]");
+            lines.Add("");
+            lines.AddRange(msg.BodyPlain.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}"));
         }
         else
         {
-            lines.Add($"[{ColorScheme.MutedMarkup}]Loading message body...[/]");
+            lines.Add($"  [{ColorScheme.MutedMarkup}]Loading message body...[/]");
         }
 
         _readingContent.SetContent(lines);
+
+        // Update right header with scroll hint
+        if (_readingPane != null && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
+            _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]"]);
     }
 
     private MailMessage? GetSelectedMessage()
@@ -590,6 +736,7 @@ public class CXPostApp : IDisposable
                     try
                     {
                         await _syncCoordinator.SyncAccountAsync(account, _cts.Token);
+                        EnqueueUiAction(() => _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), true));
                     }
                     catch (Exception ex)
                     {
