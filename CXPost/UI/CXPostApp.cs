@@ -50,6 +50,7 @@ public class CXPostApp : IDisposable
     private MarkupControl? _topStatusRight;
     private MarkupControl? _leftPanelHeader;
     private MarkupControl? _rightPanelHeader;
+    private MarkupControl? _previewPanelHeader;
 
     // Message bar
     private Components.MessageBar? _messageBar;
@@ -149,24 +150,17 @@ public class CXPostApp : IDisposable
             .WithMargin(1, 0, 0, 0)
             .Build();
 
-        // Build main grid - 2 panels
+        _previewPanelHeader = Controls.Markup("[grey70]Preview[/]")
+            .WithMargin(1, 0, 0, 0)
+            .Build();
+
+        // Build main grid (layout depends on _currentLayout)
         _mainGrid = Controls.HorizontalGrid()
-            .Column(col => col
-                .Width(28)
-                .Add(_leftPanelHeader)
-                .Add(_folderTree))
-            .Column(col =>
-            {
-                col.Add(_rightPanelHeader);
-                col.Add(_messageTable);
-                col.Add(_listReadingSplitter);
-                col.Add(_readingPane);
-                col.Add(_dashboardPanel);
-            })
-            .WithSplitterAfter(0)
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
+
+        RebuildMainGrid();
 
         // ── Top status bar ───────────────────────────────────────────────────
 
@@ -278,6 +272,52 @@ public class CXPostApp : IDisposable
             // Start background sync for all configured accounts
             StartBackgroundSync();
         }
+    }
+
+    private void RebuildMainGrid()
+    {
+        if (_mainGrid == null) return;
+
+        _mainGrid.ClearColumns();
+
+        // Left column: folder tree (same in both layouts)
+        var folderColumn = new ColumnContainer(_mainGrid) { Width = 28 };
+        folderColumn.AddContent(_leftPanelHeader!);
+        folderColumn.AddContent(_folderTree!);
+        _mainGrid.AddColumn(folderColumn);
+
+        if (_currentLayout == "wide")
+        {
+            // Wide layout: Folders | Messages | Preview (3 columns)
+            var messageColumn = new ColumnContainer(_mainGrid);
+            messageColumn.AddContent(_rightPanelHeader!);
+            messageColumn.AddContent(_messageTable!);
+            messageColumn.AddContent(_dashboardPanel!);
+            _mainGrid.AddColumnWithSplitter(messageColumn);
+
+            var previewColumn = new ColumnContainer(_mainGrid);
+            previewColumn.AddContent(_previewPanelHeader!);
+            previewColumn.AddContent(_readingPane!);
+            _mainGrid.AddColumnWithSplitter(previewColumn);
+
+            // Horizontal splitter not used in wide layout
+            if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+        }
+        else
+        {
+            // Classic layout: Folders | Messages / Preview (2 columns, vertical split)
+            var rightColumn = new ColumnContainer(_mainGrid);
+            rightColumn.AddContent(_rightPanelHeader!);
+            rightColumn.AddContent(_messageTable!);
+            rightColumn.AddContent(_listReadingSplitter!);
+            rightColumn.AddContent(_readingPane!);
+            rightColumn.AddContent(_dashboardPanel!);
+            _mainGrid.AddColumnWithSplitter(rightColumn);
+
+            if (_listReadingSplitter != null) _listReadingSplitter.Visible = true;
+        }
+
+        _mainGrid.Invalidate();
     }
 
     private void UpdateHelpBar()
@@ -631,7 +671,16 @@ public class CXPostApp : IDisposable
         if (_messageTable != null) _messageTable.Visible = true;
         if (_readingPane != null) _readingPane.Visible = true;
         if (_dashboardPanel != null) _dashboardPanel.Visible = false;
-        if (_listReadingSplitter != null) _listReadingSplitter.Visible = true;
+        if (_previewPanelHeader != null) _previewPanelHeader.Visible = true;
+
+        if (_currentLayout == "classic")
+        {
+            if (_listReadingSplitter != null) _listReadingSplitter.Visible = true;
+        }
+        else
+        {
+            if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+        }
     }
 
     private void ShowDashboardView(List<IWindowControl> dashboardControls)
@@ -640,6 +689,7 @@ public class CXPostApp : IDisposable
         if (_messageTable != null) _messageTable.Visible = false;
         if (_readingPane != null) _readingPane.Visible = false;
         if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+        if (_previewPanelHeader != null) _previewPanelHeader.Visible = false;
 
         if (_dashboardPanel == null) return;
         _dashboardPanel.ClearContents();
@@ -1049,7 +1099,26 @@ public class CXPostApp : IDisposable
         }
         else if (e.KeyInfo.Key == KeyBindings.SwitchLayout)
         {
-            // Toggle layout (placeholder — layout switching not yet implemented)
+            _currentLayout = _currentLayout == "classic" ? "wide" : "classic";
+            _config.Layout = _currentLayout;
+            _configService.Save(_config);
+            RebuildMainGrid();
+
+            // Re-apply dashboard/message visibility based on current view
+            if (_dashboardPanel?.Visible == true)
+            {
+                // Dashboard is showing — keep it visible
+                if (_currentLayout == "wide")
+                {
+                    if (_readingPane != null) _readingPane.Visible = false;
+                    if (_previewPanelHeader != null) _previewPanelHeader.Visible = false;
+                }
+            }
+            else
+            {
+                ShowMessageListView();
+            }
+
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.Settings)
