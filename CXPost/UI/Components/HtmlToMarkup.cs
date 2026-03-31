@@ -23,12 +23,37 @@ public static class HtmlToMarkup
 
         ProcessNode(document.Body ?? (INode)document.DocumentElement, sb, state);
 
-        // Clean up excessive blank lines
-        var result = sb.ToString();
-        while (result.Contains("\n\n\n"))
-            result = result.Replace("\n\n\n", "\n\n");
+        // Aggressively clean up blank lines — email HTML is full of spacers
+        var lines = sb.ToString().Split('\n');
+        var cleaned = new List<string>();
+        var consecutiveEmpty = 0;
 
-        return result.Trim();
+        foreach (var line in lines)
+        {
+            var trimmed = line.TrimEnd();
+            // Strip markup to check if line is visually empty
+            var stripped = System.Text.RegularExpressions.Regex.Replace(trimmed, @"\[/?[^\]]*\]", "").Trim();
+
+            if (string.IsNullOrEmpty(stripped))
+            {
+                consecutiveEmpty++;
+                if (consecutiveEmpty <= 1) // Allow at most 1 blank line
+                    cleaned.Add("");
+            }
+            else
+            {
+                consecutiveEmpty = 0;
+                cleaned.Add(trimmed);
+            }
+        }
+
+        // Trim leading/trailing blanks
+        while (cleaned.Count > 0 && string.IsNullOrEmpty(cleaned[0]))
+            cleaned.RemoveAt(0);
+        while (cleaned.Count > 0 && string.IsNullOrEmpty(cleaned[^1]))
+            cleaned.RemoveAt(cleaned.Count - 1);
+
+        return string.Join('\n', cleaned);
     }
 
     private class ConvertState
@@ -78,14 +103,37 @@ public static class HtmlToMarkup
     {
         var tag = element.TagName.ToLowerInvariant();
 
-        // Skip invisible elements
-        if (tag is "style" or "script" or "head" or "meta" or "link" or "title")
+        // Skip invisible/irrelevant elements
+        if (tag is "style" or "script" or "head" or "meta" or "link" or "title" or "noscript")
             return;
 
-        // Handle display:none
+        // Handle display:none and hidden spacers
         var style = element.GetAttribute("style") ?? "";
         if (style.Contains("display:none") || style.Contains("display: none"))
             return;
+        if (style.Contains("font-size:0") || style.Contains("font-size: 0"))
+            return;
+
+        // Skip 1px spacer images and tracking pixels
+        if (tag == "img")
+        {
+            var width = element.GetAttribute("width");
+            var height = element.GetAttribute("height");
+            if (width == "1" || height == "1") return;
+        }
+
+        // Skip empty elements (common in email templates)
+        if (tag is "div" or "p" or "span" or "td")
+        {
+            var text = element.TextContent.Trim();
+            var innerHtml = element.InnerHtml.Trim();
+            if (string.IsNullOrEmpty(text) && !innerHtml.Contains("<img") && !innerHtml.Contains("<a "))
+            {
+                // Check if it's just &nbsp; or whitespace
+                if (string.IsNullOrWhiteSpace(text.Replace("\u00A0", "")))
+                    return;
+            }
+        }
 
         switch (tag)
         {
