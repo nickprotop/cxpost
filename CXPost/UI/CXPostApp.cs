@@ -291,6 +291,7 @@ public class CXPostApp : IDisposable
 
         _helpBar.Add("Ctrl+S", "Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
         _helpBar.Add("F5", "Sync", () => SimulateKey(ConsoleKey.F5));
+        _helpBar.Add("Ctrl+,", "Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
 
         _statusBar.UpdateHelpBar(_helpBar.Render());
     }
@@ -807,6 +808,24 @@ public class CXPostApp : IDisposable
         else if (e.KeyInfo.Key == KeyBindings.SwitchLayout)
         {
             // Toggle layout (placeholder — layout switching not yet implemented)
+            e.Handled = true;
+        }
+        else if (ctrl && e.KeyInfo.Key == KeyBindings.Settings)
+        {
+            _ = Task.Run(async () =>
+            {
+                var dialog = new SettingsDialog(_config, _configService, _credentialService, _ws);
+                var changed = await dialog.ShowAsync(_ws);
+                if (changed)
+                {
+                    _config = _configService.Load();
+                    EnqueueUiAction(() =>
+                    {
+                        RefreshFolderTree();
+                        ShowSuccess("Settings saved");
+                    });
+                }
+            });
             e.Handled = true;
         }
     }
