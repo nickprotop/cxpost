@@ -17,6 +17,10 @@ namespace CXPost.UI;
 
 public class CXPostApp : IDisposable
 {
+    private record FolderTag(int FolderId);
+    private record AccountTag(string AccountId);
+    private record AggregatedTag(string TypeKey);
+
     private readonly ConsoleWindowSystem _ws;
     private readonly IConfigService _configService;
     private readonly ICacheService _cacheService;
@@ -61,6 +65,9 @@ public class CXPostApp : IDisposable
 
     // Message bar
     private Components.MessageBar? _messageBar;
+
+    // Aggregated folder lookup for in-place tree updates
+    private Dictionary<string, List<MailFolder>> _aggregatedFolders = new(StringComparer.OrdinalIgnoreCase);
 
     public CXPostApp(
         ConsoleWindowSystem ws,
@@ -300,10 +307,14 @@ public class CXPostApp : IDisposable
     {
         if (_mainGrid == null) return;
 
+        // Preserve folder column width across rebuilds
+        var columns = _mainGrid.Columns;
+        var folderWidth = columns.Count > 0 ? columns[0].Width ?? 28 : 28;
+
         _mainGrid.ClearColumns();
 
         // Left column: folder tree (same in both layouts)
-        var folderColumn = new ColumnContainer(_mainGrid) { Width = 28 };
+        var folderColumn = new ColumnContainer(_mainGrid) { Width = folderWidth };
         folderColumn.AddContent(_leftPanelHeader!);
         folderColumn.AddContent(_folderTree!);
         _mainGrid.AddColumn(folderColumn);
@@ -538,14 +549,30 @@ public class CXPostApp : IDisposable
         _topStatusRight.SetContent([status]);
     }
 
+    private static string FormatFolderNodeText(string icon, string displayName, int unread, int total)
+    {
+        if (unread > 0)
+            return $"{icon} {MarkupParser.Escape(displayName)} [yellow]({unread})[/]";
+        if (total > 0)
+            return $"{icon} {MarkupParser.Escape(displayName)} [grey35]({total})[/]";
+        return $"[grey70]{icon} {MarkupParser.Escape(displayName)}[/]";
+    }
+
+    private MailFolder? FindFolderById(int folderId)
+    {
+        foreach (var account in _config.Accounts)
+        {
+            var folder = _cacheService.GetFolders(account.Id).FirstOrDefault(f => f.Id == folderId);
+            if (folder != null) return folder;
+        }
+        return null;
+    }
+
     public void PopulateFolderTree()
     {
         if (_folderTree == null) return;
-        _folderTree.Clear();
 
-        var totalUnread = 0;
-
-        // Collect all folders across accounts, grouped by type
+        // Gather data
         var foldersByType = new Dictionary<string, List<MailFolder>>(StringComparer.OrdinalIgnoreCase);
         var allAccountFolders = new List<(Account account, List<MailFolder> folders)>();
 
@@ -564,17 +591,30 @@ public class CXPostApp : IDisposable
             }
         }
 
-        // ── "All Accounts" aggregated view (at top) ─────────────────────────
-        // Count total unread first (populated below)
-        var allNode = _folderTree.AddRootNode("\U0001f4ec All Accounts");
-        allNode.TextColor = ColorScheme.PrimaryText;
-        allNode.Tag = "all-accounts";
+        _aggregatedFolders = foldersByType;
 
+        // ── "All Accounts" node ─────────────────────────────────────
+        var allNode = _folderTree.FindNodeByTag("all-accounts");
+        if (allNode == null)
+        {
+            allNode = _folderTree.AddRootNode("\U0001f4ec All Accounts");
+            allNode.TextColor = ColorScheme.PrimaryText;
+            allNode.Tag = "all-accounts";
+        }
+
+        // Remove aggregated type children that no longer exist
+        foreach (var child in allNode.Children.ToList())
+        {
+            if (child.Tag is AggregatedTag agg && !foldersByType.ContainsKey(agg.TypeKey))
+                allNode.RemoveChild(child);
+        }
+
+        // Update or add aggregated type children
+        var totalUnread = 0;
         foreach (var type in foldersByType.Keys.OrderBy(FolderSortKey))
         {
             var typeFolders = foldersByType[type];
             var icon = GetFolderIcon(type);
-
             var unread = 0;
             var total = 0;
             foreach (var f in typeFolders)
@@ -586,45 +626,23 @@ public class CXPostApp : IDisposable
 
             totalUnread += unread;
 
-            string text;
-            if (unread > 0)
-                text = $"{icon} {MarkupParser.Escape(type)} [yellow]({unread})[/]";
-            else if (total > 0)
-                text = $"{icon} {MarkupParser.Escape(type)} [grey35]({total})[/]";
-            else
-                text = $"[grey70]{icon} {MarkupParser.Escape(type)}[/]";
+            var text = FormatFolderNodeText(icon, type, unread, total);
 
-            var child = allNode.AddChild(text);
-            child.Tag = typeFolders; // List<MailFolder> — aggregated
-        }
-
-        // ── Per-account folders ──────────────────────────────────────────────
-        foreach (var (account, folders) in allAccountFolders)
-        {
-            var accountNode = _folderTree.AddRootNode($"[grey50 bold]{MarkupParser.Escape(account.Name.ToUpperInvariant())}[/]");
-            accountNode.TextColor = ColorScheme.MutedText;
-            accountNode.Tag = account;
-
-            foreach (var folder in folders.OrderBy(f => FolderSortKey(f.DisplayName)).ThenBy(f => f.Path))
+            TreeNode? typeNode = null;
+            foreach (var child in allNode.Children)
             {
-                if (folder.DisplayName.StartsWith("[") && folder.DisplayName.EndsWith("]"))
-                    continue;
+                if (child.Tag is AggregatedTag at && at.TypeKey.Equals(type, StringComparison.OrdinalIgnoreCase))
+                { typeNode = child; break; }
+            }
 
-                var icon = GetFolderIcon(folder.DisplayName);
-                var msgs = _cacheService.GetMessages(folder.Id);
-                var unread = msgs.Count(m => !m.IsRead);
-                var total = msgs.Count;
-
-                string text;
-                if (unread > 0)
-                    text = $"{icon} {MarkupParser.Escape(folder.DisplayName)} [yellow]({unread})[/]";
-                else if (total > 0)
-                    text = $"{icon} {MarkupParser.Escape(folder.DisplayName)} [grey35]({total})[/]";
-                else
-                    text = $"[grey70]{icon} {MarkupParser.Escape(folder.DisplayName)}[/]";
-
-                var node = accountNode.AddChild(text);
-                node.Tag = folder;
+            if (typeNode != null)
+            {
+                typeNode.Text = text;
+            }
+            else
+            {
+                var newChild = allNode.AddChild(text);
+                newChild.Tag = new AggregatedTag(type);
             }
         }
 
@@ -634,7 +652,77 @@ public class CXPostApp : IDisposable
             : "\U0001f4ec All Accounts";
         allNode.Text = allText;
 
+        // ── Per-account nodes ───────────────────────────────────────
+        var currentAccountIds = new HashSet<string>(_config.Accounts.Select(a => a.Id));
+
+        // Remove account root nodes that no longer exist
+        foreach (var rootNode in _folderTree.RootNodes.ToList())
+        {
+            if (rootNode.Tag is AccountTag acctTag && !currentAccountIds.Contains(acctTag.AccountId))
+                _folderTree.RemoveRootNode(rootNode);
+        }
+
+        foreach (var (account, folders) in allAccountFolders)
+        {
+            // Find or create account root node
+            TreeNode? accountNode = null;
+            foreach (var rootNode in _folderTree.RootNodes)
+            {
+                if (rootNode.Tag is AccountTag acctTag && acctTag.AccountId == account.Id)
+                { accountNode = rootNode; break; }
+            }
+
+            if (accountNode == null)
+            {
+                accountNode = _folderTree.AddRootNode($"[grey50 bold]{MarkupParser.Escape(account.Name.ToUpperInvariant())}[/]");
+                accountNode.TextColor = ColorScheme.MutedText;
+                accountNode.Tag = new AccountTag(account.Id);
+            }
+
+            var validFolders = folders
+                .Where(f => !(f.DisplayName.StartsWith("[") && f.DisplayName.EndsWith("]")))
+                .OrderBy(f => FolderSortKey(f.DisplayName)).ThenBy(f => f.Path)
+                .ToList();
+
+            var currentFolderIds = new HashSet<int>(validFolders.Select(f => f.Id));
+
+            // Remove folder children that no longer exist
+            foreach (var child in accountNode.Children.ToList())
+            {
+                if (child.Tag is FolderTag ft && !currentFolderIds.Contains(ft.FolderId))
+                    accountNode.RemoveChild(child);
+            }
+
+            // Update or add folder children
+            foreach (var folder in validFolders)
+            {
+                var icon = GetFolderIcon(folder.DisplayName);
+                var msgs = _cacheService.GetMessages(folder.Id);
+                var unread = msgs.Count(m => !m.IsRead);
+                var total = msgs.Count;
+                var text = FormatFolderNodeText(icon, folder.DisplayName, unread, total);
+
+                TreeNode? folderNode = null;
+                foreach (var child in accountNode.Children)
+                {
+                    if (child.Tag is FolderTag ft && ft.FolderId == folder.Id)
+                    { folderNode = child; break; }
+                }
+
+                if (folderNode != null)
+                {
+                    folderNode.Text = text;
+                }
+                else
+                {
+                    var newChild = accountNode.AddChild(text);
+                    newChild.Tag = new FolderTag(folder.Id);
+                }
+            }
+        }
+
         _statusBar.UpdateConnectionStatus(totalUnread, _imapService.IsConnected);
+        _folderTree.Invalidate();
     }
 
     /// <summary>
@@ -691,9 +779,11 @@ public class CXPostApp : IDisposable
 
     private void OnFolderSelected(object? sender, TreeNodeEventArgs args)
     {
-        if (args.Node?.Tag is MailFolder folder)
+        if (args.Node?.Tag is FolderTag ft)
         {
-            // Single folder selected — show message list
+            var folder = FindFolderById(ft.FolderId);
+            if (folder == null) return;
+
             ShowMessageListView();
             _messageListCoordinator.SelectFolder(folder);
 
@@ -706,54 +796,57 @@ public class CXPostApp : IDisposable
 
             ClearReadingPane();
             UpdateHelpBar();
-        UpdateToolbar();
+            UpdateToolbar();
         }
-        else if (args.Node?.Tag is List<MailFolder> aggregatedFolders)
+        else if (args.Node?.Tag is AggregatedTag agg)
         {
-            // Aggregated folder type (e.g. All Accounts > Inbox)
-            ShowMessageListView();
-            var allMessages = new List<MailMessage>();
-            MailFolder? lastFolder = null;
-            foreach (var f in aggregatedFolders)
+            if (_aggregatedFolders.TryGetValue(agg.TypeKey, out var aggregatedFolders) && aggregatedFolders.Count > 0)
             {
-                allMessages.AddRange(_cacheService.GetMessages(f.Id));
-                lastFolder = f;
+                ShowMessageListView();
+                var allMessages = new List<MailMessage>();
+                MailFolder? lastFolder = null;
+                foreach (var f in aggregatedFolders)
+                {
+                    allMessages.AddRange(_cacheService.GetMessages(f.Id));
+                    lastFolder = f;
+                }
+                if (lastFolder != null)
+                    _messageListCoordinator.SelectFolder(lastFolder);
+
+                allMessages.Sort((a, b) => b.Date.CompareTo(a.Date));
+                PopulateMessageList(allMessages);
+
+                _statusBar.UpdateBreadcrumb("All Accounts", agg.TypeKey);
+                _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({allMessages.Count})[/]"]);
+
+                ClearReadingPane();
+                UpdateHelpBar();
+                UpdateToolbar();
             }
-            if (lastFolder != null)
-                _messageListCoordinator.SelectFolder(lastFolder);
-
-            allMessages.Sort((a, b) => b.Date.CompareTo(a.Date));
-            PopulateMessageList(allMessages);
-
-            var typeName = NormalizeFolderType(aggregatedFolders[0].DisplayName, aggregatedFolders[0].Path);
-            _statusBar.UpdateBreadcrumb("All Accounts", typeName);
-            _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({allMessages.Count})[/]"]);
-
-            ClearReadingPane();
-            UpdateHelpBar();
-        UpdateToolbar();
         }
-        else if (args.Node?.Tag is Account account)
+        else if (args.Node?.Tag is AccountTag acctTag)
         {
-            // Account node — show account dashboard
-            ShowDashboardView(
-                Components.AccountDashboard.BuildAccountDashboard(account, _cacheService));
+            var account = _config.Accounts.FirstOrDefault(a => a.Id == acctTag.AccountId);
+            if (account != null)
+            {
+                ShowDashboardView(
+                    Components.AccountDashboard.BuildAccountDashboard(account, _cacheService));
 
-            _statusBar.UpdateBreadcrumb(account.Name, "Dashboard");
-            _rightPanelHeader?.SetContent([$"[grey70]Account Dashboard[/]"]);
-            UpdateHelpBar();
-        UpdateToolbar();
+                _statusBar.UpdateBreadcrumb(account.Name, "Dashboard");
+                _rightPanelHeader?.SetContent([$"[grey70]Account Dashboard[/]"]);
+                UpdateHelpBar();
+                UpdateToolbar();
+            }
         }
         else if (args.Node?.Tag is string tag && tag == "all-accounts")
         {
-            // All Accounts node — show aggregated dashboard
             ShowDashboardView(
                 Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
 
             _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard");
             _rightPanelHeader?.SetContent([$"[grey70]Dashboard[/]"]);
             UpdateHelpBar();
-        UpdateToolbar();
+            UpdateToolbar();
         }
     }
 
@@ -828,22 +921,83 @@ public class CXPostApp : IDisposable
     {
         if (_messageTable == null) return;
 
-        _messageTable.ClearRows();
-        foreach (var msg in messages)
-        {
-            var star = msg.IsFlagged ? "[yellow]\u2605[/]" : "[grey35]\u2606[/]";
-            var from = msg.IsRead
-                ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]"
-                : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]";
-            var subject = msg.IsRead
-                ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]"
-                : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]";
-            var date = FormatDate(msg.Date);
+        // Build lookup of incoming messages by UID
+        var incoming = new Dictionary<uint, (int index, MailMessage msg)>();
+        for (var i = 0; i < messages.Count; i++)
+            incoming[messages[i].Uid] = (i, messages[i]);
 
-            var row = new TableRow(star, from, subject, date);
-            row.Tag = msg;
-            _messageTable.AddRow(row);
+        // Build lookup of existing rows by UID
+        var existing = new Dictionary<uint, int>();
+        for (var i = 0; i < _messageTable.RowCount; i++)
+        {
+            var row = _messageTable.GetRow(i);
+            if (row.Tag is MailMessage m)
+                existing[m.Uid] = i;
         }
+
+        // Remove rows not in incoming (reverse order to keep indices stable)
+        var removeIndices = existing
+            .Where(kv => !incoming.ContainsKey(kv.Key))
+            .Select(kv => kv.Value)
+            .OrderByDescending(i => i)
+            .ToList();
+        foreach (var idx in removeIndices)
+            _messageTable.RemoveRow(idx);
+
+        // Rebuild existing lookup after removals (indices shifted)
+        existing.Clear();
+        for (var i = 0; i < _messageTable.RowCount; i++)
+        {
+            var row = _messageTable.GetRow(i);
+            if (row.Tag is MailMessage m)
+                existing[m.Uid] = i;
+        }
+
+        // Update existing rows and insert new ones
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var msg = messages[i];
+            var (star, from, subject, date) = FormatMessageRow(msg);
+
+            if (existing.TryGetValue(msg.Uid, out var rowIdx))
+            {
+                // Update cells in-place
+                _messageTable.UpdateCell(rowIdx, 0, star);
+                _messageTable.UpdateCell(rowIdx, 1, from);
+                _messageTable.UpdateCell(rowIdx, 2, subject);
+                _messageTable.UpdateCell(rowIdx, 3, date);
+                _messageTable.GetRow(rowIdx).Tag = msg;
+            }
+            else
+            {
+                // New message — insert at correct position
+                var row = new TableRow(star, from, subject, date);
+                row.Tag = msg;
+                _messageTable.InsertRow(i, row);
+
+                // Rebuild existing lookup since indices shifted
+                existing.Clear();
+                for (var j = 0; j < _messageTable.RowCount; j++)
+                {
+                    var r = _messageTable.GetRow(j);
+                    if (r.Tag is MailMessage m)
+                        existing[m.Uid] = j;
+                }
+            }
+        }
+    }
+
+    private static (string star, string from, string subject, string date) FormatMessageRow(MailMessage msg)
+    {
+        var star = msg.IsFlagged ? "[yellow]\u2605[/]" : "[grey35]\u2606[/]";
+        var from = msg.IsRead
+            ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]"
+            : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]";
+        var subject = msg.IsRead
+            ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]"
+            : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]";
+        var date = FormatDate(msg.Date);
+        return (star, from, subject, date);
     }
 
     private void OnMessageSelected(object? sender, int rowIndex)
