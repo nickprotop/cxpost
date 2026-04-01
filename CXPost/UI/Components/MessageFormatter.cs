@@ -1,8 +1,11 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Web;
 using CXPost.Models;
 
 namespace CXPost.UI.Components;
 
-public static class MessageFormatter
+public static partial class MessageFormatter
 {
     public static string FormatQuotedReply(MailMessage original)
     {
@@ -14,9 +17,10 @@ public static class MessageFormatter
             ""
         };
 
-        if (original.BodyPlain != null)
+        var body = GetPlainTextBody(original.BodyPlain);
+        if (body != null)
         {
-            foreach (var line in original.BodyPlain.Split('\n'))
+            foreach (var line in body.Split('\n'))
                 lines.Add($"> {line.TrimEnd('\r')}");
         }
 
@@ -33,14 +37,72 @@ public static class MessageFormatter
             $"From: {original.FromName ?? ""} <{original.FromAddress}>",
             $"Date: {original.Date:MMMM d, yyyy h:mm tt}",
             $"Subject: {original.Subject}",
-            $"To: {original.ToAddresses}",
+            $"To: {FormatAddresses(original.ToAddresses)}",
             ""
         };
 
-        if (original.BodyPlain != null)
-            lines.Add(original.BodyPlain);
+        var body = GetPlainTextBody(original.BodyPlain);
+        if (body != null)
+            lines.Add(body);
 
         return string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// Returns true if the body content appears to be HTML.
+    /// </summary>
+    public static bool IsHtml(string? body)
+    {
+        if (string.IsNullOrEmpty(body)) return false;
+        return body.Contains("<html", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("<body", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("<div", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("<p>", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Returns plain text from body content, stripping HTML if needed.
+    /// </summary>
+    public static string? GetPlainTextBody(string? body)
+    {
+        if (string.IsNullOrEmpty(body)) return body;
+        return IsHtml(body) ? StripHtmlToPlainText(body) : body;
+    }
+
+    /// <summary>
+    /// Strips HTML tags and decodes entities to produce plain text.
+    /// </summary>
+    public static string StripHtmlToPlainText(string html)
+    {
+        // Remove style and script blocks
+        var text = StyleOrScriptRegex().Replace(html, "");
+        // Convert <br> and block-level elements to newlines
+        text = BrRegex().Replace(text, "\n");
+        text = BlockTagRegex().Replace(text, "\n");
+        // Remove remaining tags
+        text = TagRegex().Replace(text, "");
+        // Decode HTML entities
+        text = HttpUtility.HtmlDecode(text);
+        // Clean up excessive whitespace
+        text = ConsecutiveBlankLinesRegex().Replace(text, "\n\n");
+        return text.Trim();
+    }
+
+    /// <summary>
+    /// Formats a JSON address array as comma-separated plain text.
+    /// </summary>
+    public static string FormatAddresses(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return "";
+        try
+        {
+            var list = JsonSerializer.Deserialize<List<string>>(json);
+            return list != null ? string.Join(", ", list) : json;
+        }
+        catch
+        {
+            return json;
+        }
     }
 
     public static string GetReplySubject(string? subject, string prefix = "Re:")
@@ -56,4 +118,19 @@ public static class MessageFormatter
         if (string.IsNullOrEmpty(subject)) return $"{prefix} ";
         return $"{prefix} {subject}";
     }
+
+    [GeneratedRegex(@"<(style|script)[^>]*>[\s\S]*?</\1>", RegexOptions.IgnoreCase)]
+    private static partial Regex StyleOrScriptRegex();
+
+    [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase)]
+    private static partial Regex BrRegex();
+
+    [GeneratedRegex(@"</(p|div|tr|li|h[1-6]|blockquote)>", RegexOptions.IgnoreCase)]
+    private static partial Regex BlockTagRegex();
+
+    [GeneratedRegex(@"<[^>]+>")]
+    private static partial Regex TagRegex();
+
+    [GeneratedRegex(@"\n{3,}")]
+    private static partial Regex ConsecutiveBlankLinesRegex();
 }

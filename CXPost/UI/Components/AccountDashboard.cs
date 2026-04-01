@@ -22,48 +22,77 @@ public static class AccountDashboard
         // Gather stats
         var totalMessages = 0;
         var totalUnread = 0;
+        var totalFlagged = 0;
         var totalFolders = 0;
-        var accountRows = new List<(string name, string email, int messages, int unread, int folders)>();
+        DateTime? oldestUnread = null;
+
+        var accountStats = new List<(Account account, int messages, int unread, int flagged, int folders, DateTime? lastSync, DateTime? oldestUnreadDate)>();
 
         foreach (var account in accounts)
         {
             var folders = cache.GetFolders(account.Id);
             var msgs = 0;
             var unread = 0;
+            var flagged = 0;
+            DateTime? acctOldestUnread = null;
+
             foreach (var f in folders)
             {
                 var fMsgs = cache.GetMessages(f.Id);
                 msgs += fMsgs.Count;
-                unread += fMsgs.Count(m => !m.IsRead);
+                foreach (var m in fMsgs)
+                {
+                    if (!m.IsRead)
+                    {
+                        unread++;
+                        if (acctOldestUnread == null || m.Date < acctOldestUnread)
+                            acctOldestUnread = m.Date;
+                    }
+                    if (m.IsFlagged) flagged++;
+                }
             }
             totalMessages += msgs;
             totalUnread += unread;
+            totalFlagged += flagged;
             totalFolders += folders.Count;
-            accountRows.Add((account.Name, account.Email, msgs, unread, folders.Count));
+            if (acctOldestUnread != null && (oldestUnread == null || acctOldestUnread < oldestUnread))
+                oldestUnread = acctOldestUnread;
+
+            accountStats.Add((account, msgs, unread, flagged, folders.Count, account.LastSync, acctOldestUnread));
         }
 
         // ── Header ──────────────────────────────────────────────────────
         controls.Add(Controls.Markup()
             .AddEmptyLine()
             .AddLine("  [cyan1 bold]\U0001f4ec  All Accounts[/]")
-            .AddLine($"  [grey50]{accounts.Count} account{(accounts.Count != 1 ? "s" : "")} configured[/]")
+            .AddLine($"  [grey50]{accounts.Count} account{(accounts.Count != 1 ? "s" : "")} configured  \u2022  {totalFolders} folders[/]")
             .AddEmptyLine()
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build());
 
-        // ── Stats: 3 progress bars ──────────────────────────────────────
-        controls.Add(Controls.ProgressBar()
-            .WithHeader($"[cyan1]Messages[/]  [grey50]{totalMessages}[/]")
-            .ShowHeader()
-            .WithValue(totalMessages)
-            .WithMaxValue(Math.Max(totalMessages, 1))
-            .WithFilledColor(Color.Cyan1)
-            .WithUnfilledColor(Color.Grey19)
-            .WithWidth(60)
-            .ShowPercentage(false)
+        // ── Summary stats table ─────────────────────────────────────────
+        var oldestStr = oldestUnread?.ToString("MMM d, yyyy") ?? "None";
+        var summaryTable = Controls.Table()
+            .AddColumn("", width: 18)
+            .AddColumn("", width: 18)
+            .AddColumn("", width: 18)
+            .AddColumn("")
+            .HideHeader()
+            .AddRow(
+                $"[cyan1]{totalMessages}[/]",
+                $"[yellow]{totalUnread}[/]",
+                $"[green]{totalMessages - totalUnread}[/]",
+                $"[grey70]{totalFlagged}[/]")
+            .AddRow(
+                "[grey50]Total messages[/]",
+                "[grey50]Unread[/]",
+                "[grey50]Read[/]",
+                "[grey50]Flagged[/]")
             .WithMargin(2, 0, 2, 0)
-            .Build());
+            .Build();
+        controls.Add(summaryTable);
 
+        // ── Progress bars ───────────────────────────────────────────────
         controls.Add(Controls.ProgressBar()
             .WithHeader($"[yellow]Unread[/]  [grey50]{totalUnread} / {totalMessages}[/]")
             .ShowHeader()
@@ -73,11 +102,11 @@ public static class AccountDashboard
             .WithUnfilledColor(Color.Grey19)
             .WithWidth(60)
             .ShowPercentage()
-            .WithMargin(2, 0, 2, 0)
+            .WithMargin(2, 1, 2, 0)
             .Build());
 
         controls.Add(Controls.ProgressBar()
-            .WithHeader($"[grey70]Read[/]  [grey50]{totalMessages - totalUnread} / {totalMessages}[/]")
+            .WithHeader($"[green]Read[/]  [grey50]{totalMessages - totalUnread} / {totalMessages}[/]")
             .ShowHeader()
             .WithValue(totalMessages - totalUnread)
             .WithMaxValue(Math.Max(totalMessages, 1))
@@ -85,25 +114,35 @@ public static class AccountDashboard
             .WithUnfilledColor(Color.Grey19)
             .WithWidth(60)
             .ShowPercentage()
-            .WithMargin(2, 0, 2, 1)
+            .WithMargin(2, 0, 2, 0)
             .Build());
+
+        if (oldestUnread != null)
+        {
+            controls.Add(Controls.Markup()
+                .AddLine($"  [grey50]Oldest unread:[/]  [yellow]{oldestStr}[/]")
+                .WithMargin(2, 1, 2, 0)
+                .Build());
+        }
 
         // ── Per-account breakdown ───────────────────────────────────────
         controls.Add(Controls.RuleBuilder()
             .WithTitle("[grey93]Accounts[/]")
             .WithColor(Color.Grey23)
-            .WithMargin(2, 0, 2, 0)
+            .WithMargin(2, 1, 2, 0)
             .Build());
 
-        foreach (var (name, email, messages, unread, folders) in accountRows)
+        foreach (var (account, messages, unread, flagged, folders, lastSync, acctOldestUnread) in accountStats)
         {
+            var syncStr = lastSync?.ToString("MMM d, h:mm tt") ?? "Never";
+
             controls.Add(Controls.Markup()
                 .AddEmptyLine()
-                .AddLine($"  \U0001f4e7 [white bold]{MarkupParser.Escape(name)}[/]  [grey50]{MarkupParser.Escape(email)}[/]")
+                .AddLine($"  \U0001f4e7 [white bold]{MarkupParser.Escape(account.Name)}[/]  [grey50]{MarkupParser.Escape(account.Email)}[/]")
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .Build());
 
-            // Bar graph showing unread vs read
+            // Bar graph showing unread vs total
             controls.Add(Controls.BarGraph()
                 .WithLabel($"{unread} unread")
                 .WithLabelWidth(14)
@@ -114,6 +153,22 @@ public static class AccountDashboard
                 .ShowValue()
                 .WithValueFormat($"/ {messages}")
                 .WithMargin(4, 0, 2, 0)
+                .Build());
+
+            // Per-account detail line
+            var detailParts = new List<string>
+            {
+                $"[grey50]{folders} folders[/]"
+            };
+            if (flagged > 0)
+                detailParts.Add($"[yellow]{flagged} flagged[/]");
+            if (acctOldestUnread != null)
+                detailParts.Add($"[grey50]oldest unread: {acctOldestUnread:MMM d}[/]");
+            detailParts.Add($"[grey35]synced: {syncStr}[/]");
+
+            controls.Add(Controls.Markup()
+                .AddLine($"    {string.Join("  \u2022  ", detailParts)}")
+                .WithAlignment(HorizontalAlignment.Stretch)
                 .Build());
         }
 

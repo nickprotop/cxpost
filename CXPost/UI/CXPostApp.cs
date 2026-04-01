@@ -892,7 +892,7 @@ public class CXPostApp : IDisposable
             "",
             $"  [{ColorScheme.MutedMarkup}]From:[/]  {MarkupParser.Escape(msg.FromName ?? "")} <{MarkupParser.Escape(msg.FromAddress ?? "")}>",
             $"  [{ColorScheme.MutedMarkup}]Date:[/]  {msg.Date:MMMM d, yyyy h:mm tt}",
-            $"  [{ColorScheme.MutedMarkup}]To:[/]    {MarkupParser.Escape(msg.ToAddresses ?? "")}",
+            $"  [{ColorScheme.MutedMarkup}]To:[/]    {MarkupParser.Escape(MessageFormatter.FormatAddresses(msg.ToAddresses))}",
             ""
         };
 
@@ -903,12 +903,7 @@ public class CXPostApp : IDisposable
             lines.Add("");
 
             var body = msg.BodyPlain;
-            var isHtml = body.Contains("<html", StringComparison.OrdinalIgnoreCase)
-                      || body.Contains("<body", StringComparison.OrdinalIgnoreCase)
-                      || body.Contains("<div", StringComparison.OrdinalIgnoreCase)
-                      || body.Contains("<p>", StringComparison.OrdinalIgnoreCase);
-
-            if (isHtml)
+            if (MessageFormatter.IsHtml(body))
             {
                 // Convert HTML to rich ConsoleEx markup
                 var markup = Components.HtmlToMarkup.Convert(body);
