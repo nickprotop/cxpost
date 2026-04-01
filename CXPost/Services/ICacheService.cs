@@ -13,5 +13,6 @@ public interface ICacheService
     void StoreBody(int folderId, uint uid, string body);
     void UpdateFlags(int folderId, uint uid, bool isRead, bool isFlagged);
     void DeleteMessage(int folderId, uint uid);
+    void RestoreMessage(int folderId, MailMessage message);
     void PurgeFolder(int folderId);
 }

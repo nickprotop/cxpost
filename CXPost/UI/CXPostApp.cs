@@ -921,6 +921,9 @@ public class CXPostApp : IDisposable
 
     public void DismissMessage(string id) => _messageBar?.Dismiss(id);
 
+    public void ShowUndoNotification(string id, string text, Action onUndo) =>
+        _messageBar?.ShowWithUndo(id, text, onUndo);
+
     public void PopulateMessageList(List<MailMessage> messages)
     {
         if (_messageTable == null) return;
@@ -1218,11 +1221,16 @@ public class CXPostApp : IDisposable
                 var query = await dialog.ShowAsync(_ws);
                 if (query != null && _messageListCoordinator.CurrentFolder != null)
                 {
+                    EnqueueUiAction(() => ShowInfo($"Searching for \"{query}\"..."));
                     try
                     {
                         var results = await _searchCoordinator.SearchAsync(
                             _messageListCoordinator.CurrentFolder, query, _cts.Token);
-                        EnqueueUiAction(() => PopulateMessageList(results));
+                        EnqueueUiAction(() =>
+                        {
+                            PopulateMessageList(results);
+                            _rightPanelHeader?.SetContent([$"[grey70]Search:[/] [white]{MarkupParser.Escape(query)}[/] [grey50]({results.Count} results)[/]"]);
+                        });
                     }
                     catch (Exception ex)
                     {
@@ -1235,45 +1243,34 @@ public class CXPostApp : IDisposable
         else if (e.KeyInfo.Key == KeyBindings.Delete)
         {
             var msg = GetSelectedMessage();
-            if (msg != null)
+            var folder = _messageListCoordinator.CurrentFolder;
+            if (msg != null && folder != null)
             {
-                _messageListCoordinator.SelectMessage(msg);
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _messageListCoordinator.DeleteMessageAsync(_cts.Token);
-                        EnqueueUiAction(() =>
-                        {
-                            // Select next message or clear reading pane
-                            var nextMsg = GetSelectedMessage();
-                            if (nextMsg != null)
-                                ShowMessagePreview(nextMsg);
-                            else
-                                ClearReadingPane();
-                            UpdateHelpBar();
-        UpdateToolbar();
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        EnqueueUiAction(() => ShowError($"Delete failed: {ex.Message}"));
-                    }
-                });
+                // Optimistic delete: instant UI removal + undo notification + deferred IMAP
+                _messageListCoordinator.DeleteMessageOptimistic(msg, folder, _cts.Token);
+
+                // Update UI after removal
+                var nextMsg = GetSelectedMessage();
+                if (nextMsg != null)
+                    ShowMessagePreview(nextMsg);
+                else
+                    ClearReadingPane();
+                UpdateHelpBar();
+                UpdateToolbar();
             }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.ToggleFlag)
         {
             var msg = GetSelectedMessage();
-            if (msg != null)
+            var folder = _messageListCoordinator.CurrentFolder;
+            if (msg != null && folder != null)
             {
-                _messageListCoordinator.SelectMessage(msg);
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await _messageListCoordinator.ToggleFlagAsync(_cts.Token);
+                        await _messageListCoordinator.ToggleFlagAsync(msg, folder, _cts.Token);
                     }
                     catch (Exception ex)
                     {
@@ -1286,14 +1283,14 @@ public class CXPostApp : IDisposable
         else if (ctrl && e.KeyInfo.Key == KeyBindings.ToggleRead)
         {
             var msg = GetSelectedMessage();
-            if (msg != null)
+            var folder = _messageListCoordinator.CurrentFolder;
+            if (msg != null && folder != null)
             {
-                _messageListCoordinator.SelectMessage(msg);
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await _messageListCoordinator.ToggleReadAsync(_cts.Token);
+                        await _messageListCoordinator.ToggleReadAsync(msg, folder, _cts.Token);
                     }
                     catch (Exception ex)
                     {

@@ -45,5 +45,11 @@ public class CacheService : ICacheService
 
     public void DeleteMessage(int folderId, uint uid) => _repo.DeleteMessage(folderId, uid);
 
+    public void RestoreMessage(int folderId, MailMessage message)
+    {
+        message.FolderId = folderId;
+        _repo.UpsertMessage(message);
+    }
+
     public void PurgeFolder(int folderId) => _repo.PurgeFolderMessages(folderId);
 }

@@ -44,7 +44,17 @@ public class MessageBar
 
         _control.MouseClick += (_, e) =>
         {
-            // Click dismisses the latest dismissable message
+            // First check for undo actions
+            for (var i = _messages.Count - 1; i >= 0; i--)
+            {
+                if (_undoActions.ContainsKey(_messages[i].Id))
+                {
+                    TryUndo(_messages[i].Id);
+                    e.Handled = true;
+                    return;
+                }
+            }
+            // Otherwise dismiss the latest dismissable message
             for (var i = _messages.Count - 1; i >= 0; i--)
             {
                 if (_messages[i].Dismissable)
@@ -127,6 +137,47 @@ public class MessageBar
         Render();
     }
 
+    private readonly Dictionary<string, Action> _undoActions = new();
+
+    /// <summary>
+    /// Shows a message with a clickable [Undo] action. The undo callback fires on click.
+    /// </summary>
+    public string ShowWithUndo(string id, string text, Action onUndo, int timeoutSeconds = 5)
+    {
+        _undoActions[id] = onUndo;
+        var entry = new MessageEntry(
+            id, text + $"  [{ColorScheme.PrimaryMarkup}][Undo][/]",
+            MessageSeverity.Info,
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddSeconds(timeoutSeconds),
+            true);
+
+        var idx = _messages.FindIndex(m => m.Id == id);
+        if (idx >= 0)
+            _messages[idx] = entry;
+        else
+            _messages.Add(entry);
+
+        Render();
+        return id;
+    }
+
+    /// <summary>
+    /// Tries to invoke and dismiss an undo action by message ID.
+    /// Returns true if an undo action was found and invoked.
+    /// </summary>
+    public bool TryUndo(string id)
+    {
+        if (_undoActions.Remove(id, out var action))
+        {
+            _messages.RemoveAll(m => m.Id == id);
+            Render();
+            action();
+            return true;
+        }
+        return false;
+    }
+
     public void DismissLatest()
     {
         if (_messages.Count > 0)
@@ -146,6 +197,9 @@ public class MessageBar
     public void Tick()
     {
         var now = DateTime.UtcNow;
+        var expired = _messages.Where(m => m.ExpiresAt.HasValue && m.ExpiresAt.Value <= now).ToList();
+        foreach (var msg in expired)
+            _undoActions.Remove(msg.Id);
         var removed = _messages.RemoveAll(m => m.ExpiresAt.HasValue && m.ExpiresAt.Value <= now);
         if (removed > 0)
             Render();

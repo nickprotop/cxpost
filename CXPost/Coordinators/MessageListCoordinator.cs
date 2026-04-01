@@ -58,60 +58,110 @@ public class MessageListCoordinator
         return imap;
     }
 
-    private Account? GetAccountForCurrentFolder()
+    private Account? GetAccountForCurrentFolder() => GetAccountForFolder(CurrentFolder);
+
+    private Account? GetAccountForFolder(MailFolder? folder)
     {
-        if (CurrentFolder == null) return null;
-        return _configService.Load().Accounts.FirstOrDefault(a => a.Id == CurrentFolder.AccountId);
+        if (folder == null) return null;
+        return _configService.Load().Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
     }
 
-    public async Task ToggleFlagAsync(CancellationToken ct)
+    public async Task ToggleFlagAsync(MailMessage message, MailFolder folder, CancellationToken ct)
     {
-        if (CurrentFolder == null || SelectedMessage == null) return;
-        var account = GetAccountForCurrentFolder();
+        var account = GetAccountForFolder(folder);
         if (account == null) return;
 
         using var imap = await CreateEphemeralImapAsync(account, ct);
-        var newFlag = !SelectedMessage.IsFlagged;
-        await imap.SetFlagsAsync(CurrentFolder.Path, SelectedMessage.Uid, isFlagged: newFlag, ct: ct);
-        _cache.UpdateFlags(CurrentFolder.Id, SelectedMessage.Uid, SelectedMessage.IsRead, newFlag);
-        SelectedMessage.IsFlagged = newFlag;
+        var newFlag = !message.IsFlagged;
+        await imap.SetFlagsAsync(folder.Path, message.Uid, isFlagged: newFlag, ct: ct);
+        _cache.UpdateFlags(folder.Id, message.Uid, message.IsRead, newFlag);
+        message.IsFlagged = newFlag;
         RefreshMessageList();
     }
 
-    public async Task ToggleReadAsync(CancellationToken ct)
+    public async Task ToggleReadAsync(MailMessage message, MailFolder folder, CancellationToken ct)
     {
-        if (CurrentFolder == null || SelectedMessage == null) return;
-        var account = GetAccountForCurrentFolder();
+        var account = GetAccountForFolder(folder);
         if (account == null) return;
 
         using var imap = await CreateEphemeralImapAsync(account, ct);
-        var newRead = !SelectedMessage.IsRead;
-        await imap.SetFlagsAsync(CurrentFolder.Path, SelectedMessage.Uid, isRead: newRead, ct: ct);
-        _cache.UpdateFlags(CurrentFolder.Id, SelectedMessage.Uid, newRead, SelectedMessage.IsFlagged);
-        SelectedMessage.IsRead = newRead;
+        var newRead = !message.IsRead;
+        await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: newRead, ct: ct);
+        _cache.UpdateFlags(folder.Id, message.Uid, newRead, message.IsFlagged);
+        message.IsRead = newRead;
         RefreshMessageList();
     }
 
-    public async Task DeleteMessageAsync(CancellationToken ct)
+    /// <summary>
+    /// Optimistic delete: removes from cache/UI immediately, shows undo notification,
+    /// then performs IMAP delete after undo window expires.
+    /// </summary>
+    public void DeleteMessageOptimistic(MailMessage message, MailFolder folder, CancellationToken ct)
     {
-        if (CurrentFolder == null || SelectedMessage == null) return;
-        var account = GetAccountForCurrentFolder();
+        var account = GetAccountForFolder(folder);
         if (account == null) return;
 
-        using var imap = await CreateEphemeralImapAsync(account, ct);
-        var folders = _cache.GetFolders(CurrentFolder.AccountId);
-        var trash = folders.FirstOrDefault(f =>
-            f.Path.Equals("Trash", StringComparison.OrdinalIgnoreCase) ||
-            f.Path.Contains("[Gmail]/Trash", StringComparison.OrdinalIgnoreCase));
-
-        if (trash != null && CurrentFolder.Id != trash.Id)
-            await imap.MoveMessageAsync(CurrentFolder.Path, trash.Path, SelectedMessage.Uid, ct);
-        else
-            await imap.DeleteMessageAsync(CurrentFolder.Path, SelectedMessage.Uid, ct);
-
-        _cache.DeleteMessage(CurrentFolder.Id, SelectedMessage.Uid);
-        SelectedMessage = null;
+        // Optimistic: remove from cache and UI immediately
+        _cache.DeleteMessage(folder.Id, message.Uid);
+        if (SelectedMessage?.Uid == message.Uid)
+            SelectedMessage = null;
         RefreshMessageList();
+
+        // Undo window
+        var undoCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var undoId = $"undo-delete-{message.Uid}";
+
+        // Show undo notification via the app
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.ShowUndoNotification(undoId, "Message moved to Trash", () =>
+            {
+                // Undo: restore message to cache and refresh
+                undoCts.Cancel();
+                _cache.RestoreMessage(folder.Id, message);
+                _app.Value.EnqueueUiAction(() =>
+                {
+                    RefreshMessageList();
+                    _app.Value.ShowSuccess("Delete undone");
+                });
+            }));
+
+        // Fire IMAP delete after undo window (5 seconds)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), undoCts.Token);
+
+                // Undo window expired — perform server-side delete
+                using var imap = await CreateEphemeralImapAsync(account, ct);
+                var folders = _cache.GetFolders(folder.AccountId);
+                var trash = folders.FirstOrDefault(f =>
+                    f.Path.Equals("Trash", StringComparison.OrdinalIgnoreCase) ||
+                    f.Path.Contains("[Gmail]/Trash", StringComparison.OrdinalIgnoreCase));
+
+                if (trash != null && folder.Id != trash.Id)
+                    await imap.MoveMessageAsync(folder.Path, trash.Path, message.Uid, ct);
+                else
+                    await imap.DeleteMessageAsync(folder.Path, message.Uid, ct);
+
+                _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(undoId));
+            }
+            catch (OperationCanceledException)
+            {
+                // Undo was triggered — IMAP delete cancelled
+            }
+            catch (Exception ex)
+            {
+                // IMAP failed — restore message locally
+                _cache.RestoreMessage(folder.Id, message);
+                _app.Value.EnqueueUiAction(() =>
+                {
+                    RefreshMessageList();
+                    _app.Value.DismissMessage(undoId);
+                    _app.Value.ShowError($"Delete failed: {ex.Message}");
+                });
+            }
+        }, ct);
     }
 
     public async Task FetchAndShowBodyAsync(MailMessage message, CancellationToken ct)
