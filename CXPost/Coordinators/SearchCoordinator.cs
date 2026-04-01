@@ -21,20 +21,10 @@ public class SearchCoordinator
         var account = _configService.Load().Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
         if (account == null) return [];
 
-        var imap = _imapFactory.GetConnection(account);
-        var imapLock = _imapFactory.GetLock(account.Id);
-        await imapLock.WaitAsync(ct);
-        try
-        {
-            if (!imap.IsConnected)
-                await imap.ConnectAsync(account, ct);
-            var matchingUids = await imap.SearchAsync(folder.Path, query, ct);
-            var allMessages = _cache.GetMessages(folder.Id);
-            return allMessages.Where(m => matchingUids.Contains(m.Uid)).ToList();
-        }
-        finally
-        {
-            imapLock.Release();
-        }
+        using var imap = new ImapService(_imapFactory.Credentials);
+        await imap.ConnectAsync(account, ct);
+        var matchingUids = await imap.SearchAsync(folder.Path, query, ct);
+        var allMessages = _cache.GetMessages(folder.Id);
+        return allMessages.Where(m => matchingUids.Contains(m.Uid)).ToList();
     }
 }

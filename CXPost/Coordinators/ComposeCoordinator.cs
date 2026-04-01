@@ -88,19 +88,9 @@ public class ComposeCoordinator
 
         if (sent != null)
         {
-            var imap = _imapFactory.GetConnection(account);
-            var imapLock = _imapFactory.GetLock(account.Id);
-            await imapLock.WaitAsync(ct);
-            try
-            {
-                if (!imap.IsConnected)
-                    await imap.ConnectAsync(account, ct);
-                await imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, ct);
-            }
-            finally
-            {
-                imapLock.Release();
-            }
+            using var imap = new ImapService(_imapFactory.Credentials);
+            await imap.ConnectAsync(account, ct);
+            await imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, ct);
         }
 
         // Record contacts

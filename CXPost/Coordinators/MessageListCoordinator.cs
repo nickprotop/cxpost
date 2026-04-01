@@ -47,19 +47,15 @@ public class MessageListCoordinator
         _app.Value.EnqueueUiAction(() => _app.Value.PopulateMessageList(messages));
     }
 
-    private async Task<ImapService> AcquireImapAsync(Account account, CancellationToken ct)
+    /// <summary>
+    /// Creates a short-lived IMAP connection for user-initiated actions (flag, delete, move).
+    /// Uses its own client to avoid blocking on the sync connection's lock.
+    /// </summary>
+    private async Task<ImapService> CreateEphemeralImapAsync(Account account, CancellationToken ct)
     {
-        var imap = _imapFactory.GetConnection(account);
-        var imapLock = _imapFactory.GetLock(account.Id);
-        await imapLock.WaitAsync(ct);
-        if (!imap.IsConnected)
-            await imap.ConnectAsync(account, ct);
+        var imap = new ImapService(_imapFactory.Credentials);
+        await imap.ConnectAsync(account, ct);
         return imap;
-    }
-
-    private void ReleaseImap(string accountId)
-    {
-        _imapFactory.GetLock(accountId).Release();
     }
 
     private Account? GetAccountForCurrentFolder()
@@ -74,19 +70,12 @@ public class MessageListCoordinator
         var account = GetAccountForCurrentFolder();
         if (account == null) return;
 
-        var imap = await AcquireImapAsync(account, ct);
-        try
-        {
-            var newFlag = !SelectedMessage.IsFlagged;
-            await imap.SetFlagsAsync(CurrentFolder.Path, SelectedMessage.Uid, isFlagged: newFlag, ct: ct);
-            _cache.UpdateFlags(CurrentFolder.Id, SelectedMessage.Uid, SelectedMessage.IsRead, newFlag);
-            SelectedMessage.IsFlagged = newFlag;
-            RefreshMessageList();
-        }
-        finally
-        {
-            ReleaseImap(account.Id);
-        }
+        using var imap = await CreateEphemeralImapAsync(account, ct);
+        var newFlag = !SelectedMessage.IsFlagged;
+        await imap.SetFlagsAsync(CurrentFolder.Path, SelectedMessage.Uid, isFlagged: newFlag, ct: ct);
+        _cache.UpdateFlags(CurrentFolder.Id, SelectedMessage.Uid, SelectedMessage.IsRead, newFlag);
+        SelectedMessage.IsFlagged = newFlag;
+        RefreshMessageList();
     }
 
     public async Task ToggleReadAsync(CancellationToken ct)
@@ -95,19 +84,12 @@ public class MessageListCoordinator
         var account = GetAccountForCurrentFolder();
         if (account == null) return;
 
-        var imap = await AcquireImapAsync(account, ct);
-        try
-        {
-            var newRead = !SelectedMessage.IsRead;
-            await imap.SetFlagsAsync(CurrentFolder.Path, SelectedMessage.Uid, isRead: newRead, ct: ct);
-            _cache.UpdateFlags(CurrentFolder.Id, SelectedMessage.Uid, newRead, SelectedMessage.IsFlagged);
-            SelectedMessage.IsRead = newRead;
-            RefreshMessageList();
-        }
-        finally
-        {
-            ReleaseImap(account.Id);
-        }
+        using var imap = await CreateEphemeralImapAsync(account, ct);
+        var newRead = !SelectedMessage.IsRead;
+        await imap.SetFlagsAsync(CurrentFolder.Path, SelectedMessage.Uid, isRead: newRead, ct: ct);
+        _cache.UpdateFlags(CurrentFolder.Id, SelectedMessage.Uid, newRead, SelectedMessage.IsFlagged);
+        SelectedMessage.IsRead = newRead;
+        RefreshMessageList();
     }
 
     public async Task DeleteMessageAsync(CancellationToken ct)
@@ -116,23 +98,16 @@ public class MessageListCoordinator
         var account = GetAccountForCurrentFolder();
         if (account == null) return;
 
-        var imap = await AcquireImapAsync(account, ct);
-        try
-        {
-            var folders = _cache.GetFolders(CurrentFolder.AccountId);
-            var trash = folders.FirstOrDefault(f =>
-                f.Path.Equals("Trash", StringComparison.OrdinalIgnoreCase) ||
-                f.Path.Contains("[Gmail]/Trash", StringComparison.OrdinalIgnoreCase));
+        using var imap = await CreateEphemeralImapAsync(account, ct);
+        var folders = _cache.GetFolders(CurrentFolder.AccountId);
+        var trash = folders.FirstOrDefault(f =>
+            f.Path.Equals("Trash", StringComparison.OrdinalIgnoreCase) ||
+            f.Path.Contains("[Gmail]/Trash", StringComparison.OrdinalIgnoreCase));
 
-            if (trash != null && CurrentFolder.Id != trash.Id)
-                await imap.MoveMessageAsync(CurrentFolder.Path, trash.Path, SelectedMessage.Uid, ct);
-            else
-                await imap.DeleteMessageAsync(CurrentFolder.Path, SelectedMessage.Uid, ct);
-        }
-        finally
-        {
-            ReleaseImap(account.Id);
-        }
+        if (trash != null && CurrentFolder.Id != trash.Id)
+            await imap.MoveMessageAsync(CurrentFolder.Path, trash.Path, SelectedMessage.Uid, ct);
+        else
+            await imap.DeleteMessageAsync(CurrentFolder.Path, SelectedMessage.Uid, ct);
 
         _cache.DeleteMessage(CurrentFolder.Id, SelectedMessage.Uid);
         SelectedMessage = null;
@@ -152,18 +127,11 @@ public class MessageListCoordinator
             var account = GetAccountForCurrentFolder();
             if (account == null || account.MarkAsReadOnView)
             {
-                var imap = await AcquireImapAsync(account!, ct);
-                try
-                {
-                    await imap.SetFlagsAsync(CurrentFolder.Path, message.Uid, isRead: true, ct: ct);
-                    _cache.UpdateFlags(CurrentFolder.Id, message.Uid, true, message.IsFlagged);
-                    message.IsRead = true;
-                    RefreshMessageList();
-                }
-                finally
-                {
-                    ReleaseImap(account!.Id);
-                }
+                using var imap = await CreateEphemeralImapAsync(account!, ct);
+                await imap.SetFlagsAsync(CurrentFolder.Path, message.Uid, isRead: true, ct: ct);
+                _cache.UpdateFlags(CurrentFolder.Id, message.Uid, true, message.IsFlagged);
+                message.IsRead = true;
+                RefreshMessageList();
             }
         }
     }

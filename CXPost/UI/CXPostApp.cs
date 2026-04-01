@@ -1321,19 +1321,9 @@ public class CXPostApp : IDisposable
                             var account = GetCurrentAccount();
                             if (account != null)
                             {
-                                var imap = _imapFactory.GetConnection(account);
-                                var imapLock = _imapFactory.GetLock(account.Id);
-                                await imapLock.WaitAsync(_cts.Token);
-                                try
-                                {
-                                    if (!imap.IsConnected)
-                                        await imap.ConnectAsync(account, _cts.Token);
-                                    await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
-                                }
-                                finally
-                                {
-                                    imapLock.Release();
-                                }
+                                using var imap = new ImapService(_imapFactory.Credentials);
+                                await imap.ConnectAsync(account, _cts.Token);
+                                await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
                             }
                             _cacheService.DeleteMessage(folder.Id, msg.Uid);
                             _messageListCoordinator.RefreshMessageList();
