@@ -366,6 +366,7 @@ public class CXPostApp : IDisposable
             rightColumn.AddContent(_rightPanelHeader!);
             rightColumn.AddContent(_messageTable!);
             rightColumn.AddContent(_listReadingSplitter!);
+            rightColumn.AddContent(_previewPanelHeader!);
             rightColumn.AddContent(_readingPane!);
             rightColumn.AddContent(_dashboardPanel!);
             _mainGrid.AddColumnWithSplitter(rightColumn);
@@ -1362,7 +1363,7 @@ public class CXPostApp : IDisposable
             var body = msg.BodyPlain;
             if (MessageFormatter.IsHtml(body))
             {
-                var markup = Components.HtmlToMarkup.Convert(body);
+                var markup = Components.HtmlConverter.ToMarkup(body);
                 bodyLines.AddRange(markup.Split('\n').Select(l => $"  {l}"));
             }
             else
@@ -1722,7 +1723,7 @@ public class CXPostApp : IDisposable
                 _ = Task.Run(async () =>
                 {
                     var fromDisplay = $"{account.Name} <{account.Email}>";
-                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to, subject, body);
+                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to: to, subject: subject, body: body);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
                         await SendWithProgressAsync(account, result);
@@ -1740,7 +1741,7 @@ public class CXPostApp : IDisposable
                 _ = Task.Run(async () =>
                 {
                     var fromDisplay = $"{account.Name} <{account.Email}>";
-                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to, subject, body);
+                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to: to, subject: subject, body: body);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
                         await SendWithProgressAsync(account, result);
@@ -1758,7 +1759,7 @@ public class CXPostApp : IDisposable
                 _ = Task.Run(async () =>
                 {
                     var fromDisplay = $"{account.Name} <{account.Email}>";
-                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to, subject, body);
+                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to: to, subject: subject, body: body);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
                         await SendWithProgressAsync(account, result);

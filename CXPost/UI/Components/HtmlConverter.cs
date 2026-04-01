@@ -7,23 +7,28 @@ using SharpConsoleUI.Parsing;
 
 namespace CXPost.UI.Components;
 
+public enum HtmlOutputMode { Markup, PlainText }
+
 /// <summary>
-/// Converts HTML email body to ConsoleEx markup for terminal rendering.
-/// Handles common email HTML: formatting, links, lists, headings, blockquotes, tables.
+/// Converts HTML email body to either ConsoleEx markup (for display) or plain text (for compose/reply).
+/// Uses AngleSharp for proper DOM parsing. Shared DOM walker with mode-dependent output.
 /// </summary>
-public static class HtmlToMarkup
+public static class HtmlConverter
 {
-    public static string Convert(string html)
+    public static string ToMarkup(string html) => Convert(html, HtmlOutputMode.Markup);
+    public static string ToPlainText(string html) => Convert(html, HtmlOutputMode.PlainText);
+
+    private static string Convert(string html, HtmlOutputMode mode)
     {
         var parser = new AngleSharp.Html.Parser.HtmlParser();
         var document = parser.ParseDocument(html);
 
         var sb = new StringBuilder();
-        var state = new ConvertState();
+        var state = new ConvertState { Mode = mode };
 
         ProcessNode(document.Body ?? (INode)document.DocumentElement, sb, state, 50);
 
-        // Aggressively clean up blank lines — email HTML is full of spacers
+        // Clean up blank lines
         var lines = sb.ToString().Split('\n');
         var cleaned = new List<string>();
         var consecutiveEmpty = 0;
@@ -31,13 +36,14 @@ public static class HtmlToMarkup
         foreach (var line in lines)
         {
             var trimmed = line.TrimEnd();
-            // Strip markup to check if line is visually empty
-            var stripped = System.Text.RegularExpressions.Regex.Replace(trimmed, @"\[/?[^\]]*\]", "").Trim();
+            var stripped = mode == HtmlOutputMode.Markup
+                ? System.Text.RegularExpressions.Regex.Replace(trimmed, @"\[/?[^\]]*\]", "").Trim()
+                : trimmed.Trim();
 
             if (string.IsNullOrEmpty(stripped))
             {
                 consecutiveEmpty++;
-                if (consecutiveEmpty <= 1) // Allow at most 1 blank line
+                if (consecutiveEmpty <= 1)
                     cleaned.Add("");
             }
             else
@@ -47,7 +53,6 @@ public static class HtmlToMarkup
             }
         }
 
-        // Trim leading/trailing blanks
         while (cleaned.Count > 0 && string.IsNullOrEmpty(cleaned[0]))
             cleaned.RemoveAt(0);
         while (cleaned.Count > 0 && string.IsNullOrEmpty(cleaned[^1]))
@@ -58,11 +63,24 @@ public static class HtmlToMarkup
 
     private class ConvertState
     {
+        public HtmlOutputMode Mode;
         public int IndentLevel;
         public bool InPre;
         public int ListDepth;
         public int OrderedCounter;
         public bool LastWasBlock;
+    }
+
+    private static string Escape(string text, ConvertState state)
+        => state.Mode == HtmlOutputMode.Markup ? MarkupParser.Escape(text) : text;
+
+    private static string Wrap(string text, string markupTag, ConvertState state)
+        => state.Mode == HtmlOutputMode.Markup ? $"[{markupTag}]{text}[/]" : text;
+
+    private static void AppendMarkup(StringBuilder sb, string markup, ConvertState state)
+    {
+        if (state.Mode == HtmlOutputMode.Markup)
+            sb.Append(markup);
     }
 
     private static void ProcessNode(INode node, StringBuilder sb, ConvertState state, int depth = 50)
@@ -89,15 +107,14 @@ public static class HtmlToMarkup
 
         if (state.InPre)
         {
-            sb.Append(MarkupParser.Escape(content));
+            sb.Append(Escape(content, state));
             return;
         }
 
-        // Collapse whitespace like a browser
         content = CollapseWhitespace(content);
         if (string.IsNullOrEmpty(content)) return;
 
-        sb.Append(MarkupParser.Escape(content));
+        sb.Append(Escape(content, state));
         state.LastWasBlock = false;
     }
 
@@ -105,18 +122,15 @@ public static class HtmlToMarkup
     {
         var tag = element.TagName.ToLowerInvariant();
 
-        // Skip invisible/irrelevant elements
         if (tag is "style" or "script" or "head" or "meta" or "link" or "title" or "noscript")
             return;
 
-        // Handle display:none and hidden spacers
         var style = element.GetAttribute("style") ?? "";
         if (style.Contains("display:none") || style.Contains("display: none"))
             return;
         if (style.Contains("font-size:0") || style.Contains("font-size: 0"))
             return;
 
-        // Skip 1px spacer images and tracking pixels
         if (tag == "img")
         {
             var width = element.GetAttribute("width");
@@ -124,14 +138,12 @@ public static class HtmlToMarkup
             if (width == "1" || height == "1") return;
         }
 
-        // Skip empty elements (common in email templates)
         if (tag is "div" or "p" or "span" or "td")
         {
             var text = element.TextContent.Trim();
             var innerHtml = element.InnerHtml.Trim();
             if (string.IsNullOrEmpty(text) && !innerHtml.Contains("<img") && !innerHtml.Contains("<a "))
             {
-                // Check if it's just &nbsp; or whitespace
                 if (string.IsNullOrWhiteSpace(text.Replace("\u00A0", "")))
                     return;
             }
@@ -139,7 +151,6 @@ public static class HtmlToMarkup
 
         switch (tag)
         {
-            // Block elements — ensure newline before
             case "p":
                 EnsureBlankLine(sb, state);
                 ProcessNode(element, sb, state, depth);
@@ -164,24 +175,26 @@ public static class HtmlToMarkup
 
             case "hr":
                 EnsureNewline(sb, state);
-                sb.AppendLine($"[grey50]{"─".PadRight(60, '─')}[/]");
+                if (state.Mode == HtmlOutputMode.Markup)
+                    sb.AppendLine("[grey50]" + "─".PadRight(60, '─') + "[/]");
+                else
+                    sb.AppendLine(new string('-', 60));
                 state.LastWasBlock = true;
                 break;
 
-            // Headings
             case "h1":
                 EnsureBlankLine(sb, state);
-                sb.Append("[bold cyan1]");
+                AppendMarkup(sb, "[bold cyan1]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 EnsureBlankLine(sb, state);
                 break;
 
             case "h2":
                 EnsureBlankLine(sb, state);
-                sb.Append("[bold white]");
+                AppendMarkup(sb, "[bold white]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 EnsureBlankLine(sb, state);
                 break;
 
@@ -190,76 +203,82 @@ public static class HtmlToMarkup
             case "h5":
             case "h6":
                 EnsureBlankLine(sb, state);
-                sb.Append("[bold grey93]");
+                AppendMarkup(sb, "[bold grey93]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 EnsureNewline(sb, state);
                 break;
 
-            // Inline formatting
             case "b":
             case "strong":
-                sb.Append("[bold]");
+                AppendMarkup(sb, "[bold]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 break;
 
             case "i":
             case "em":
-                sb.Append("[italic]");
+                AppendMarkup(sb, "[italic]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 break;
 
             case "u":
             case "ins":
-                sb.Append("[underline]");
+                AppendMarkup(sb, "[underline]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 break;
 
             case "s":
             case "strike":
             case "del":
-                sb.Append("[strikethrough]");
+                AppendMarkup(sb, "[strikethrough]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 break;
 
             case "code":
-                sb.Append("[grey70 on grey19]");
+                AppendMarkup(sb, "[grey70 on grey19]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 break;
 
             case "mark":
-                sb.Append("[black on yellow]");
+                AppendMarkup(sb, "[black on yellow]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 break;
 
-            // Links
             case "a":
                 var href = element.GetAttribute("href");
-                sb.Append("[underline cyan1]");
+                AppendMarkup(sb, "[underline cyan1]", state);
                 ProcessNode(element, sb, state, depth);
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 if (!string.IsNullOrEmpty(href) && !href.StartsWith("#") && !href.StartsWith("mailto:"))
                 {
                     var linkText = element.TextContent.Trim();
-                    if (linkText != href) // Don't duplicate if link text IS the URL
-                        sb.Append($" [grey50]({MarkupParser.Escape(href)})[/]");
+                    if (linkText != href)
+                    {
+                        if (state.Mode == HtmlOutputMode.Markup)
+                            sb.Append($" [grey50]({MarkupParser.Escape(href)})[/]");
+                        else
+                            sb.Append($" ({href})");
+                    }
                 }
                 break;
 
-            // Images — show alt text
             case "img":
                 var alt = element.GetAttribute("alt");
                 if (!string.IsNullOrWhiteSpace(alt))
-                    sb.Append($"[grey50][[IMG: {MarkupParser.Escape(alt)}]][/]");
+                {
+                    if (state.Mode == HtmlOutputMode.Markup)
+                        sb.Append($"[grey50][[IMG: {MarkupParser.Escape(alt)}]][/]");
+                    else
+                        sb.Append($"[IMG: {alt}]");
+                }
                 break;
 
-            // Lists
             case "ul":
                 EnsureNewline(sb, state);
                 state.ListDepth++;
@@ -285,17 +304,22 @@ public static class HtmlToMarkup
                 if (parent == "ol")
                 {
                     state.OrderedCounter++;
-                    sb.Append($"{indent}[grey70]{state.OrderedCounter}.[/] ");
+                    if (state.Mode == HtmlOutputMode.Markup)
+                        sb.Append($"{indent}[grey70]{state.OrderedCounter}.[/] ");
+                    else
+                        sb.Append($"{indent}{state.OrderedCounter}. ");
                 }
                 else
                 {
-                    sb.Append($"{indent}[grey70]•[/] ");
+                    if (state.Mode == HtmlOutputMode.Markup)
+                        sb.Append($"{indent}[grey70]\u2022[/] ");
+                    else
+                        sb.Append($"{indent}\u2022 ");
                 }
                 ProcessNode(element, sb, state, depth);
                 EnsureNewline(sb, state);
                 break;
 
-            // Blockquote
             case "blockquote":
                 EnsureNewline(sb, state);
                 state.IndentLevel++;
@@ -306,23 +330,24 @@ public static class HtmlToMarkup
                 foreach (var line in quoteContent.ToString().Split('\n'))
                 {
                     var prefix = new string(' ', state.IndentLevel * 2);
-                    sb.AppendLine($"{prefix}[grey50]▎[/] [italic grey70]{MarkupParser.Escape(line.Trim())}[/]");
+                    if (state.Mode == HtmlOutputMode.Markup)
+                        sb.AppendLine($"{prefix}[grey50]\u258e[/] [italic grey70]{MarkupParser.Escape(line.Trim())}[/]");
+                    else
+                        sb.AppendLine($"{prefix}> {line.Trim()}");
                 }
                 state.LastWasBlock = true;
                 break;
 
-            // Preformatted
             case "pre":
                 EnsureNewline(sb, state);
-                sb.Append("[grey70 on grey11]");
+                AppendMarkup(sb, "[grey70 on grey11]", state);
                 state.InPre = true;
                 ProcessNode(element, sb, state, depth);
                 state.InPre = false;
-                sb.Append("[/]");
+                AppendMarkup(sb, "[/]", state);
                 EnsureNewline(sb, state);
                 break;
 
-            // Table — simple text rendering
             case "table":
                 EnsureNewline(sb, state);
                 ProcessNode(element, sb, state, depth);
@@ -335,10 +360,8 @@ public static class HtmlToMarkup
 
             case "td":
             case "th":
-                // Handled by ProcessTableRow
                 break;
 
-            // Span and other inline containers
             default:
                 ProcessNode(element, sb, state, depth);
                 break;
@@ -364,11 +387,19 @@ public static class HtmlToMarkup
             parts.Add(text);
         }
 
-        var row = string.Join("  │  ", parts);
+        var row = string.Join("  |  ", parts);
         if (isHeader)
         {
-            sb.AppendLine($"[bold]{row}[/]");
-            sb.AppendLine($"[grey50]{new string('─', row.Length)}[/]");
+            if (state.Mode == HtmlOutputMode.Markup)
+            {
+                sb.AppendLine($"[bold]{row}[/]");
+                sb.AppendLine($"[grey50]{new string('\u2500', row.Length)}[/]");
+            }
+            else
+            {
+                sb.AppendLine(row);
+                sb.AppendLine(new string('-', row.Length));
+            }
         }
         else
         {
@@ -381,9 +412,7 @@ public static class HtmlToMarkup
     private static void EnsureNewline(StringBuilder sb, ConvertState state)
     {
         if (sb.Length > 0 && sb[^1] != '\n')
-        {
             sb.AppendLine();
-        }
         state.LastWasBlock = true;
     }
 
@@ -391,9 +420,7 @@ public static class HtmlToMarkup
     {
         EnsureNewline(sb, state);
         if (sb.Length >= 2 && sb[^2] != '\n')
-        {
             sb.AppendLine();
-        }
     }
 
     private static string CollapseWhitespace(string text)

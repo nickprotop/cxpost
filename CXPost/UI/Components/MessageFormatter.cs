@@ -1,11 +1,9 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Web;
 using CXPost.Models;
 
 namespace CXPost.UI.Components;
 
-public static partial class MessageFormatter
+public static class MessageFormatter
 {
     public static string FormatQuotedReply(MailMessage original)
     {
@@ -61,31 +59,12 @@ public static partial class MessageFormatter
     }
 
     /// <summary>
-    /// Returns plain text from body content, stripping HTML if needed.
+    /// Returns plain text from body content, converting HTML via AngleSharp if needed.
     /// </summary>
     public static string? GetPlainTextBody(string? body)
     {
         if (string.IsNullOrEmpty(body)) return body;
-        return IsHtml(body) ? StripHtmlToPlainText(body) : body;
-    }
-
-    /// <summary>
-    /// Strips HTML tags and decodes entities to produce plain text.
-    /// </summary>
-    public static string StripHtmlToPlainText(string html)
-    {
-        // Remove style and script blocks
-        var text = StyleOrScriptRegex().Replace(html, "");
-        // Convert <br> and block-level elements to newlines
-        text = BrRegex().Replace(text, "\n");
-        text = BlockTagRegex().Replace(text, "\n");
-        // Remove remaining tags
-        text = TagRegex().Replace(text, "");
-        // Decode HTML entities
-        text = HttpUtility.HtmlDecode(text);
-        // Clean up excessive whitespace
-        text = ConsecutiveBlankLinesRegex().Replace(text, "\n\n");
-        return text.Trim();
+        return IsHtml(body) ? HtmlConverter.ToPlainText(body) : body;
     }
 
     /// <summary>
@@ -134,18 +113,4 @@ public static partial class MessageFormatter
         return "\U0001f4c1";
     }
 
-    [GeneratedRegex(@"<(style|script)[^>]*>[\s\S]*?</\1>", RegexOptions.IgnoreCase)]
-    private static partial Regex StyleOrScriptRegex();
-
-    [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase)]
-    private static partial Regex BrRegex();
-
-    [GeneratedRegex(@"</(p|div|tr|li|h[1-6]|blockquote)>", RegexOptions.IgnoreCase)]
-    private static partial Regex BlockTagRegex();
-
-    [GeneratedRegex(@"<[^>]+>")]
-    private static partial Regex TagRegex();
-
-    [GeneratedRegex(@"\n{3,}")]
-    private static partial Regex ConsecutiveBlankLinesRegex();
 }

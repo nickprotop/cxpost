@@ -49,6 +49,7 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     protected override string GetTitle() => "New Message";
     protected override (int width, int height) GetSize() => (80, 30);
     protected override bool GetResizable() => true;
+    protected override bool GetMaximizable() => true;
     protected override ComposeResult? GetDefaultResult() => null;
 
     protected override void BuildContent()

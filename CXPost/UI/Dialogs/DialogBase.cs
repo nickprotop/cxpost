@@ -34,7 +34,7 @@ public abstract class DialogBase<TResult>
             .Resizable(GetResizable())
             .Movable(true)
             .Minimizable(false)
-            .Maximizable(false)
+            .Maximizable(GetMaximizable())
             .WithColors(Color.Grey93, ColorScheme.WindowBackground)
             .WithBorderStyle(BorderStyle.Rounded)
             .WithBorderColor(Color.Grey35);
@@ -46,6 +46,7 @@ public abstract class DialogBase<TResult>
     protected abstract string GetTitle();
     protected virtual (int width, int height) GetSize() => (60, 18);
     protected virtual bool GetResizable() => true;
+    protected virtual bool GetMaximizable() => false;
     protected virtual void SetInitialFocus() { }
     protected virtual TResult GetDefaultResult() => default!;
     protected virtual void OnCleanup() { }
