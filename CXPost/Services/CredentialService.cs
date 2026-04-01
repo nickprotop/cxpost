@@ -83,9 +83,9 @@ public class CredentialService : ICredentialService
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                RunProcess("security", $"add-generic-password -U -s {ServiceName} -a {accountId} -w {password}");
+                RunProcessSafe("security", ["add-generic-password", "-U", "-s", ServiceName, "-a", accountId, "-w", password]);
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                RunProcess("cmdkey", $"/generic:{ServiceName}:{accountId} /user:{accountId} /pass:{password}");
+                RunProcessSafe("cmdkey", [$"/generic:{ServiceName}:{accountId}", $"/user:{accountId}", $"/pass:{password}"]);
         }
         catch (Exception ex)
         {
@@ -276,9 +276,11 @@ public class CredentialService : ICredentialService
             };
             using var process = Process.Start(psi);
             if (process == null) return null;
-            var output = process.StandardOutput.ReadToEnd().Trim();
-            var error = process.StandardError.ReadToEnd().Trim();
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            var errorTask = process.StandardError.ReadToEndAsync();
             process.WaitForExit(5000);
+            var output = outputTask.Result.Trim();
+            var error = errorTask.Result.Trim();
 
             if (process.ExitCode != 0 && !string.IsNullOrEmpty(error))
                 System.Diagnostics.Trace.WriteLine($"[CXPost.CredentialService] {fileName} stderr: {error}");
@@ -289,6 +291,28 @@ public class CredentialService : ICredentialService
         {
             System.Diagnostics.Trace.WriteLine($"[CXPost.CredentialService] Failed to run {fileName}: {ex.Message}");
             return null;
+        }
+    }
+
+    private static void RunProcessSafe(string fileName, string[] args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(fileName)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            foreach (var arg in args)
+                psi.ArgumentList.Add(arg);
+            using var process = Process.Start(psi);
+            process?.WaitForExit(5000);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[CXPost.CredentialService] Failed to run {fileName}: {ex.Message}");
         }
     }
 

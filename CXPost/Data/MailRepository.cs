@@ -190,7 +190,7 @@ public class MailRepository
             ToAddresses = reader.IsDBNull(9) ? null : reader.GetString(9),
             CcAddresses = reader.IsDBNull(10) ? null : reader.GetString(10),
             Subject = reader.IsDBNull(11) ? null : reader.GetString(11),
-            Date = DateTime.Parse(reader.GetString(12)),
+            Date = DateTime.Parse(reader.GetString(12), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind),
             IsRead = reader.GetInt32(13) != 0,
             IsFlagged = reader.GetInt32(14) != 0,
             HasAttachments = reader.GetInt32(15) != 0,

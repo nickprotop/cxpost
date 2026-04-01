@@ -16,6 +16,7 @@ public class AccountSettingsDialog : DialogBase<Account?>
     // General tab
     private PromptControl? _nameField;
     private PromptControl? _emailField;
+    private PromptControl? _usernameField;
     private PromptControl? _replyToField;
     private PromptControl? _passwordField;
 
@@ -123,6 +124,7 @@ public class AccountSettingsDialog : DialogBase<Account?>
 
         AddFieldToPanel(panel, "Display Name", ref _nameField, _existing?.Name ?? "");
         AddFieldToPanel(panel, "Email Address", ref _emailField, _existing?.Email ?? "");
+        AddFieldToPanel(panel, "Username (if different from email)", ref _usernameField, _existing?.Username ?? "");
         AddFieldToPanel(panel, "Reply-To Address", ref _replyToField, _existing?.ReplyToAddress ?? "");
         AddFieldToPanel(panel, "Password", ref _passwordField, "");
         if (_passwordField != null)
@@ -251,7 +253,7 @@ public class AccountSettingsDialog : DialogBase<Account?>
         var account = _existing ?? new Account();
         account.Name = _nameField?.Input ?? "";
         account.Email = _emailField?.Input ?? "";
-        account.Username = account.Email;
+        account.Username = !string.IsNullOrWhiteSpace(_usernameField?.Input) ? _usernameField.Input : account.Email;
         account.ReplyToAddress = _replyToField?.Input ?? "";
 
         account.ImapHost = _imapHostField?.Input ?? "";
@@ -295,6 +297,7 @@ public class AccountSettingsDialog : DialogBase<Account?>
         return _signatureEditor?.IsEditing == true
             || _nameField?.HasFocus == true
             || _emailField?.HasFocus == true
+            || _usernameField?.HasFocus == true
             || _replyToField?.HasFocus == true
             || _passwordField?.HasFocus == true
             || _imapHostField?.HasFocus == true

@@ -20,6 +20,5 @@ public static class KeyBindings
     public static readonly ConsoleKey ToggleFlag = ConsoleKey.D;           // Ctrl+D
     public static readonly ConsoleKey ToggleRead = ConsoleKey.U;           // Ctrl+U
 
-    // Compose actions
-    public static readonly ConsoleKey SaveDraft = ConsoleKey.S;            // Ctrl+S (in compose)
+    // Reserved: SaveDraft (Ctrl+S conflicts with Search — not yet implemented)
 }

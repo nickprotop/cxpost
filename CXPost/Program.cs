@@ -71,7 +71,7 @@ public class Program
             services.AddSingleton<ICredentialService, CredentialService>();
             services.AddSingleton<ICacheService, CacheService>();
             services.AddSingleton<IContactsService, ContactsService>();
-            services.AddSingleton<IImapService, ImapService>();
+            services.AddSingleton<ImapConnectionFactory>();
             services.AddSingleton<ISmtpService, SmtpService>();
             services.AddSingleton<ThreadingService>();
 

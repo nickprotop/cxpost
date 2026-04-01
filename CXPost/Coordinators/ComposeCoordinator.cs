@@ -8,7 +8,7 @@ namespace CXPost.Coordinators;
 public class ComposeCoordinator
 {
     private readonly ISmtpService _smtp;
-    private readonly IImapService _imap;
+    private readonly ImapConnectionFactory _imapFactory;
     private readonly ICacheService _cache;
     private readonly IContactsService _contacts;
     private readonly IConfigService _configService;
@@ -16,14 +16,14 @@ public class ComposeCoordinator
 
     public ComposeCoordinator(
         ISmtpService smtp,
-        IImapService imap,
+        ImapConnectionFactory imapFactory,
         ICacheService cache,
         IContactsService contacts,
         IConfigService configService,
         NotificationCoordinator notifications)
     {
         _smtp = smtp;
-        _imap = imap;
+        _imapFactory = imapFactory;
         _cache = cache;
         _contacts = contacts;
         _configService = configService;
@@ -73,10 +73,11 @@ public class ComposeCoordinator
 
         message.Body = new TextPart("plain") { Text = bodyWithSig };
 
-        // Send via SMTP
+        // Send via SMTP (connect-send-disconnect to avoid stale connections)
         if (!_smtp.IsConnected)
             await _smtp.ConnectAsync(account, ct);
         await _smtp.SendAsync(message, ct);
+        await _smtp.DisconnectAsync(ct);
 
         // Copy to Sent folder
         var folders = _cache.GetFolders(account.Id);
@@ -86,7 +87,21 @@ public class ComposeCoordinator
             f.Path.Contains("Sent Messages", StringComparison.OrdinalIgnoreCase));
 
         if (sent != null)
-            await _imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, ct);
+        {
+            var imap = _imapFactory.GetConnection(account);
+            var imapLock = _imapFactory.GetLock(account.Id);
+            await imapLock.WaitAsync(ct);
+            try
+            {
+                if (!imap.IsConnected)
+                    await imap.ConnectAsync(account, ct);
+                await imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, ct);
+            }
+            finally
+            {
+                imapLock.Release();
+            }
+        }
 
         // Record contacts
         foreach (var addr in message.To.Mailboxes)

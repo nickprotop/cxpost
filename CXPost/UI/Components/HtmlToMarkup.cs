@@ -15,13 +15,13 @@ public static class HtmlToMarkup
 {
     public static string Convert(string html)
     {
-        var context = BrowsingContext.New(Configuration.Default);
-        var document = context.OpenAsync(req => req.Content(html)).GetAwaiter().GetResult();
+        var parser = new AngleSharp.Html.Parser.HtmlParser();
+        var document = parser.ParseDocument(html);
 
         var sb = new StringBuilder();
         var state = new ConvertState();
 
-        ProcessNode(document.Body ?? (INode)document.DocumentElement, sb, state);
+        ProcessNode(document.Body ?? (INode)document.DocumentElement, sb, state, 50);
 
         // Aggressively clean up blank lines — email HTML is full of spacers
         var lines = sb.ToString().Split('\n');
@@ -65,8 +65,10 @@ public static class HtmlToMarkup
         public bool LastWasBlock;
     }
 
-    private static void ProcessNode(INode node, StringBuilder sb, ConvertState state)
+    private static void ProcessNode(INode node, StringBuilder sb, ConvertState state, int depth = 50)
     {
+        if (depth <= 0) return;
+
         foreach (var child in node.ChildNodes)
         {
             switch (child)
@@ -75,7 +77,7 @@ public static class HtmlToMarkup
                     ProcessText(text, sb, state);
                     break;
                 case IHtmlElement element:
-                    ProcessElement(element, sb, state);
+                    ProcessElement(element, sb, state, depth - 1);
                     break;
             }
         }
@@ -99,7 +101,7 @@ public static class HtmlToMarkup
         state.LastWasBlock = false;
     }
 
-    private static void ProcessElement(IHtmlElement element, StringBuilder sb, ConvertState state)
+    private static void ProcessElement(IHtmlElement element, StringBuilder sb, ConvertState state, int depth = 50)
     {
         var tag = element.TagName.ToLowerInvariant();
 
@@ -140,7 +142,7 @@ public static class HtmlToMarkup
             // Block elements — ensure newline before
             case "p":
                 EnsureBlankLine(sb, state);
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 EnsureBlankLine(sb, state);
                 break;
 
@@ -151,7 +153,7 @@ public static class HtmlToMarkup
             case "header":
             case "footer":
                 EnsureNewline(sb, state);
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 EnsureNewline(sb, state);
                 break;
 
@@ -170,7 +172,7 @@ public static class HtmlToMarkup
             case "h1":
                 EnsureBlankLine(sb, state);
                 sb.Append("[bold cyan1]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 EnsureBlankLine(sb, state);
                 break;
@@ -178,7 +180,7 @@ public static class HtmlToMarkup
             case "h2":
                 EnsureBlankLine(sb, state);
                 sb.Append("[bold white]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 EnsureBlankLine(sb, state);
                 break;
@@ -189,7 +191,7 @@ public static class HtmlToMarkup
             case "h6":
                 EnsureBlankLine(sb, state);
                 sb.Append("[bold grey93]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 EnsureNewline(sb, state);
                 break;
@@ -198,21 +200,21 @@ public static class HtmlToMarkup
             case "b":
             case "strong":
                 sb.Append("[bold]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 break;
 
             case "i":
             case "em":
                 sb.Append("[italic]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 break;
 
             case "u":
             case "ins":
                 sb.Append("[underline]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 break;
 
@@ -220,19 +222,19 @@ public static class HtmlToMarkup
             case "strike":
             case "del":
                 sb.Append("[strikethrough]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 break;
 
             case "code":
                 sb.Append("[grey70 on grey19]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 break;
 
             case "mark":
                 sb.Append("[black on yellow]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 break;
 
@@ -240,7 +242,7 @@ public static class HtmlToMarkup
             case "a":
                 var href = element.GetAttribute("href");
                 sb.Append("[underline cyan1]");
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 sb.Append("[/]");
                 if (!string.IsNullOrEmpty(href) && !href.StartsWith("#") && !href.StartsWith("mailto:"))
                 {
@@ -261,7 +263,7 @@ public static class HtmlToMarkup
             case "ul":
                 EnsureNewline(sb, state);
                 state.ListDepth++;
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 state.ListDepth--;
                 if (state.ListDepth == 0) EnsureNewline(sb, state);
                 break;
@@ -271,7 +273,7 @@ public static class HtmlToMarkup
                 state.ListDepth++;
                 var prevCounter = state.OrderedCounter;
                 state.OrderedCounter = 0;
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 state.OrderedCounter = prevCounter;
                 state.ListDepth--;
                 if (state.ListDepth == 0) EnsureNewline(sb, state);
@@ -289,7 +291,7 @@ public static class HtmlToMarkup
                 {
                     sb.Append($"{indent}[grey70]•[/] ");
                 }
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 EnsureNewline(sb, state);
                 break;
 
@@ -298,7 +300,7 @@ public static class HtmlToMarkup
                 EnsureNewline(sb, state);
                 state.IndentLevel++;
                 var quoteContent = new StringBuilder();
-                ProcessNode(element, quoteContent, state);
+                ProcessNode(element, quoteContent, state, depth);
                 state.IndentLevel--;
 
                 foreach (var line in quoteContent.ToString().Split('\n'))
@@ -314,7 +316,7 @@ public static class HtmlToMarkup
                 EnsureNewline(sb, state);
                 sb.Append("[grey70 on grey11]");
                 state.InPre = true;
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 state.InPre = false;
                 sb.Append("[/]");
                 EnsureNewline(sb, state);
@@ -323,12 +325,12 @@ public static class HtmlToMarkup
             // Table — simple text rendering
             case "table":
                 EnsureNewline(sb, state);
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 EnsureNewline(sb, state);
                 break;
 
             case "tr":
-                ProcessTableRow(element, sb, state);
+                ProcessTableRow(element, sb, state, depth);
                 break;
 
             case "td":
@@ -338,12 +340,12 @@ public static class HtmlToMarkup
 
             // Span and other inline containers
             default:
-                ProcessNode(element, sb, state);
+                ProcessNode(element, sb, state, depth);
                 break;
         }
     }
 
-    private static void ProcessTableRow(IHtmlElement tr, StringBuilder sb, ConvertState state)
+    private static void ProcessTableRow(IHtmlElement tr, StringBuilder sb, ConvertState state, int depth = 50)
     {
         var cells = tr.Children
             .Where(c => c.TagName.ToLowerInvariant() is "td" or "th")
@@ -357,7 +359,7 @@ public static class HtmlToMarkup
         foreach (var cell in cells)
         {
             var cellSb = new StringBuilder();
-            ProcessNode(cell, cellSb, state);
+            ProcessNode(cell, cellSb, state, depth);
             var text = cellSb.ToString().Trim();
             parts.Add(text);
         }

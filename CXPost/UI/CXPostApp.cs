@@ -25,7 +25,7 @@ public class CXPostApp : IDisposable
     private readonly IConfigService _configService;
     private readonly ICacheService _cacheService;
     private readonly ICredentialService _credentialService;
-    private readonly IImapService _imapService;
+    private readonly ImapConnectionFactory _imapFactory;
     private readonly IContactsService _contactsService;
     private readonly MailSyncCoordinator _syncCoordinator;
     private readonly MessageListCoordinator _messageListCoordinator;
@@ -74,7 +74,7 @@ public class CXPostApp : IDisposable
         IConfigService configService,
         ICacheService cacheService,
         ICredentialService credentialService,
-        IImapService imapService,
+        ImapConnectionFactory imapFactory,
         IContactsService contactsService,
         MailSyncCoordinator syncCoordinator,
         MessageListCoordinator messageListCoordinator,
@@ -86,7 +86,7 @@ public class CXPostApp : IDisposable
         _configService = configService;
         _cacheService = cacheService;
         _credentialService = credentialService;
-        _imapService = imapService;
+        _imapFactory = imapFactory;
         _contactsService = contactsService;
         _syncCoordinator = syncCoordinator;
         _messageListCoordinator = messageListCoordinator;
@@ -499,6 +499,19 @@ public class CXPostApp : IDisposable
                         ShowError($"Initial sync failed for {account.Name}: {ex.Message}");
                     });
                 }
+
+                // Periodic re-sync using per-account interval
+                while (!_cts.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(account.SyncIntervalSeconds), _cts.Token);
+                        await _syncCoordinator.SyncAccountAsync(account, _cts.Token);
+                        EnqueueUiAction(() => _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), true));
+                    }
+                    catch (OperationCanceledException) { break; }
+                    catch { }
+                }
             }, _cts.Token);
         }
     }
@@ -721,7 +734,7 @@ public class CXPostApp : IDisposable
             }
         }
 
-        _statusBar.UpdateConnectionStatus(totalUnread, _imapService.IsConnected);
+        _statusBar.UpdateConnectionStatus(totalUnread, _imapFactory.HasAnyConnection);
         _folderTree.Invalidate();
     }
 
@@ -759,18 +772,7 @@ public class CXPostApp : IDisposable
         return 5;
     }
 
-    private static string GetFolderIcon(string folderName)
-    {
-        var lower = folderName.ToLowerInvariant();
-        if (lower.Contains("inbox")) return "\U0001f4e5";
-        if (lower.Contains("sent")) return "\U0001f4e4";
-        if (lower.Contains("draft")) return "\u270f\ufe0f";
-        if (lower.Contains("trash") || lower.Contains("deleted")) return "\U0001f5d1\ufe0f";
-        if (lower.Contains("spam") || lower.Contains("junk")) return "\u26a0\ufe0f";
-        if (lower.Contains("archive")) return "\U0001f4e6";
-        if (lower.Contains("star") || lower.Contains("flagged")) return "\u2b50";
-        return "\U0001f4c1";
-    }
+    private static string GetFolderIcon(string folderName) => MessageFormatter.GetFolderIcon(folderName);
 
     public void EnqueueUiAction(Action action)
     {
@@ -898,6 +900,8 @@ public class CXPostApp : IDisposable
 
     public void RefreshFolderTree() => PopulateFolderTree();
 
+    public void RefreshCurrentMessageList() => _messageListCoordinator.RefreshMessageList();
+
     public void ShowError(string message) => _messageBar?.ShowError(message);
 
     public void ShowSuccess(string message) => _messageBar?.ShowSuccess(message);
@@ -953,36 +957,31 @@ public class CXPostApp : IDisposable
                 existing[m.Uid] = i;
         }
 
-        // Update existing rows and insert new ones
-        for (var i = 0; i < messages.Count; i++)
+        // Update existing rows in-place
+        foreach (var kv in existing)
         {
-            var msg = messages[i];
-            var (star, from, subject, date) = FormatMessageRow(msg);
-
-            if (existing.TryGetValue(msg.Uid, out var rowIdx))
+            if (incoming.TryGetValue(kv.Key, out var pair))
             {
-                // Update cells in-place
-                _messageTable.UpdateCell(rowIdx, 0, star);
-                _messageTable.UpdateCell(rowIdx, 1, from);
-                _messageTable.UpdateCell(rowIdx, 2, subject);
-                _messageTable.UpdateCell(rowIdx, 3, date);
-                _messageTable.GetRow(rowIdx).Tag = msg;
+                var (star, from, subject, date) = FormatMessageRow(pair.msg);
+                _messageTable.UpdateCell(kv.Value, 0, star);
+                _messageTable.UpdateCell(kv.Value, 1, from);
+                _messageTable.UpdateCell(kv.Value, 2, subject);
+                _messageTable.UpdateCell(kv.Value, 3, date);
+                _messageTable.GetRow(kv.Value).Tag = pair.msg;
             }
-            else
+        }
+
+        // If there are new messages, rebuild fully (safe — avoids stale-index issues)
+        var hasNewMessages = messages.Any(m => !existing.ContainsKey(m.Uid));
+        if (hasNewMessages)
+        {
+            _messageTable.ClearRows();
+            foreach (var msg in messages)
             {
-                // New message — insert at correct position
+                var (star, from, subject, date) = FormatMessageRow(msg);
                 var row = new TableRow(star, from, subject, date);
                 row.Tag = msg;
-                _messageTable.InsertRow(i, row);
-
-                // Rebuild existing lookup since indices shifted
-                existing.Clear();
-                for (var j = 0; j < _messageTable.RowCount; j++)
-                {
-                    var r = _messageTable.GetRow(j);
-                    if (r.Tag is MailMessage m)
-                        existing[m.Uid] = j;
-                }
+                _messageTable.AddRow(row);
             }
         }
     }
@@ -1319,7 +1318,23 @@ public class CXPostApp : IDisposable
                     {
                         try
                         {
-                            await _imapService.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
+                            var account = GetCurrentAccount();
+                            if (account != null)
+                            {
+                                var imap = _imapFactory.GetConnection(account);
+                                var imapLock = _imapFactory.GetLock(account.Id);
+                                await imapLock.WaitAsync(_cts.Token);
+                                try
+                                {
+                                    if (!imap.IsConnected)
+                                        await imap.ConnectAsync(account, _cts.Token);
+                                    await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
+                                }
+                                finally
+                                {
+                                    imapLock.Release();
+                                }
+                            }
                             _cacheService.DeleteMessage(folder.Id, msg.Uid);
                             _messageListCoordinator.RefreshMessageList();
                         }
@@ -1377,6 +1392,11 @@ public class CXPostApp : IDisposable
                 if (changed)
                 {
                     _config = _configService.Load();
+
+                    // Reset IMAP connections to pick up credential/host changes
+                    foreach (var account in _config.Accounts)
+                        _ = _imapFactory.ResetConnectionAsync(account.Id);
+
                     EnqueueUiAction(() =>
                     {
                         RefreshFolderTree();
@@ -1390,12 +1410,13 @@ public class CXPostApp : IDisposable
 
     private static string FormatDate(DateTime date)
     {
-        var now = DateTime.UtcNow;
-        if (date.Date == now.Date)
-            return date.ToString("h:mm tt");
-        if (date.Year == now.Year)
-            return date.ToString("MMM d");
-        return date.ToString("MMM d, yyyy");
+        var now = DateTime.Now;
+        var localDate = date.Kind == DateTimeKind.Utc ? date.ToLocalTime() : date;
+        if (localDate.Date == now.Date)
+            return localDate.ToString("h:mm tt");
+        if (localDate.Year == now.Year)
+            return localDate.ToString("MMM d");
+        return localDate.ToString("MMM d, yyyy");
     }
 
     public void Dispose()

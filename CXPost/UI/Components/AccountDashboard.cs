@@ -315,16 +315,5 @@ public static class AccountDashboard
         return controls;
     }
 
-    private static string GetFolderIcon(string folderName)
-    {
-        var lower = folderName.ToLowerInvariant();
-        if (lower.Contains("inbox")) return "\U0001f4e5";
-        if (lower.Contains("sent")) return "\U0001f4e4";
-        if (lower.Contains("draft")) return "\u270f\ufe0f";
-        if (lower.Contains("trash") || lower.Contains("deleted")) return "\U0001f5d1\ufe0f";
-        if (lower.Contains("spam") || lower.Contains("junk")) return "\u26a0\ufe0f";
-        if (lower.Contains("archive") || lower.Contains("all mail")) return "\U0001f4e6";
-        if (lower.Contains("star") || lower.Contains("flagged")) return "\u2b50";
-        return "\U0001f4c1";
-    }
+    private static string GetFolderIcon(string folderName) => MessageFormatter.GetFolderIcon(folderName);
 }
