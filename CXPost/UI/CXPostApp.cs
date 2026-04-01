@@ -561,7 +561,8 @@ public class CXPostApp : IDisposable
         foreach (var account in _config.Accounts)
         {
             var folders = _cacheService.GetFolders(account.Id);
-            count += folders.Sum(f => f.UnreadCount);
+            foreach (var folder in folders)
+                count += _cacheService.GetMessages(folder.Id).Count(m => !m.IsRead);
         }
         return count;
     }
