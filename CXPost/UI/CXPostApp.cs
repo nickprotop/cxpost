@@ -126,6 +126,7 @@ public class CXPostApp : IDisposable
         // Message table
         _messageTable = Controls.Table()
             .AddColumn("\u2605", TextJustification.Center, width: 3)
+            .AddColumn("\U0001f4ce", TextJustification.Center, width: 4)
             .AddColumn("From", width: 24)
             .AddColumn("Subject")
             .AddColumn("Date", TextJustification.Right, width: 12)
@@ -1070,21 +1071,22 @@ public class CXPostApp : IDisposable
         for (var i = 0; i < messages.Count; i++)
         {
             var msg = messages[i];
-            var (star, from, subject, date) = FormatMessageRow(msg);
+            var (star, clip, from, subject, date) = FormatMessageRow(msg);
 
             if (existing.TryGetValue(msg.Uid, out var rowIdx))
             {
                 // Update in-place
                 _messageTable.UpdateCell(rowIdx, 0, star);
-                _messageTable.UpdateCell(rowIdx, 1, from);
-                _messageTable.UpdateCell(rowIdx, 2, subject);
-                _messageTable.UpdateCell(rowIdx, 3, date);
+                _messageTable.UpdateCell(rowIdx, 1, clip);
+                _messageTable.UpdateCell(rowIdx, 2, from);
+                _messageTable.UpdateCell(rowIdx, 3, subject);
+                _messageTable.UpdateCell(rowIdx, 4, date);
                 _messageTable.GetRow(rowIdx).Tag = msg;
             }
             else
             {
                 // Insert at correct position
-                var row = new TableRow(star, from, subject, date) { Tag = msg };
+                var row = new TableRow(star, clip, from, subject, date) { Tag = msg };
                 _messageTable.InsertRow(i, row);
 
                 // Rebuild lookup — indices after insertion shifted
@@ -1117,9 +1119,10 @@ public class CXPostApp : IDisposable
         }
     }
 
-    private static (string star, string from, string subject, string date) FormatMessageRow(MailMessage msg)
+    private static (string star, string clip, string from, string subject, string date) FormatMessageRow(MailMessage msg)
     {
         var star = msg.IsFlagged ? "[yellow]\u2605[/]" : "[grey35]\u2606[/]";
+        var clip = msg.HasAttachments ? "[grey70]\U0001f4ce[/]" : "";
         var from = msg.IsRead
             ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]"
             : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.FromName ?? msg.FromAddress ?? "Unknown")}[/]";
@@ -1127,7 +1130,7 @@ public class CXPostApp : IDisposable
             ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]"
             : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]";
         var date = FormatDate(msg.Date);
-        return (star, from, subject, date);
+        return (star, clip, from, subject, date);
     }
 
     private void OnMessageSelected(object? sender, int rowIndex)
@@ -1163,9 +1166,12 @@ public class CXPostApp : IDisposable
 
     public void ShowMessagePreview(MailMessage msg)
     {
-        if (_readingContent == null) return;
+        if (_readingPane == null) return;
 
-        var lines = new List<string>
+        _readingPane.ClearContents();
+
+        // Header
+        var headerLines = new List<string>
         {
             "",
             $"  [{ColorScheme.PrimaryMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]",
@@ -1175,41 +1181,254 @@ public class CXPostApp : IDisposable
             $"  [{ColorScheme.MutedMarkup}]To:[/]    {MarkupParser.Escape(MessageFormatter.FormatAddresses(msg.ToAddresses))}",
             ""
         };
+        var headerControl = Controls.Markup().Build();
+        headerControl.HorizontalAlignment = HorizontalAlignment.Stretch;
+        headerControl.SetContent(headerLines);
+        _readingPane.AddControl(headerControl);
 
+        // Attachment section
+        if (msg.Attachments != null && msg.Attachments.Count > 0)
+            AddAttachmentControls(msg);
+        else if (msg.HasAttachments && msg.Attachments == null)
+        {
+            var loadingAtt = Controls.Markup(
+                $"  [{ColorScheme.MutedMarkup}]\U0001f4ce Loading attachments...[/]").Build();
+            _readingPane.AddControl(loadingAtt);
+        }
+
+        // Body
         if (msg.BodyFetched && msg.BodyPlain != null)
         {
-            // Rule separator between headers and body
-            lines.Add($"  [grey23]{"".PadRight(60, '\u2500')}[/]");
-            lines.Add("");
-
+            var bodyLines = new List<string>
+            {
+                $"  [grey23]{"".PadRight(60, '\u2500')}[/]",
+                ""
+            };
             var body = msg.BodyPlain;
             if (MessageFormatter.IsHtml(body))
             {
-                // Convert HTML to rich ConsoleEx markup
                 var markup = Components.HtmlToMarkup.Convert(body);
-                lines.AddRange(markup.Split('\n').Select(l => $"  {l}"));
+                bodyLines.AddRange(markup.Split('\n').Select(l => $"  {l}"));
             }
             else
             {
-                // Plain text — escape markup and display
-                lines.AddRange(body.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}"));
+                bodyLines.AddRange(body.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}"));
             }
+            var bodyControl = Controls.Markup().Build();
+            bodyControl.HorizontalAlignment = HorizontalAlignment.Stretch;
+            bodyControl.SetContent(bodyLines);
+            _readingPane.AddControl(bodyControl);
         }
         else
         {
-            lines.Add($"  [{ColorScheme.MutedMarkup}]Loading message body...[/]");
+            var loading = Controls.Markup($"  [{ColorScheme.MutedMarkup}]Loading message body...[/]").Build();
+            _readingPane.AddControl(loading);
         }
 
-        _readingContent.SetContent(lines);
-
-        // Update right header with scroll hint (don't overwrite search header)
-        if (!_isSearchActive && _readingPane != null && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
+        if (!_isSearchActive && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
             SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]");
+    }
+
+    private void AddAttachmentControls(MailMessage msg)
+    {
+        if (_readingPane == null || msg.Attachments == null) return;
+
+        _readingPane.AddControl(Controls.Markup(
+            $"  [{ColorScheme.PrimaryMarkup}]\U0001f4ce Attachments ({msg.Attachments.Count})[/]")
+            .Build());
+
+        var rule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
+        _readingPane.AddControl(rule);
+
+        foreach (var att in msg.Attachments)
+        {
+            var sizeStr = FormatFileSize(att.Size);
+            var idx = att.Index;
+            var fileName = att.FileName;
+
+            var attLabel = Controls.Markup(
+                $"  [{ColorScheme.PrimaryMarkup}][[{idx + 1}]][/] {MarkupParser.Escape(fileName)}  [grey50]{sizeStr}[/]")
+                .WithMargin(2, 0, 2, 0)
+                .Build();
+            _readingPane.AddControl(attLabel);
+
+            var attActions = Controls.StatusBar()
+                .AddLeft($"{idx + 1}", "Save", () => SaveAttachmentQuick(msg, idx, fileName))
+                .AddLeft($"Ctrl+{idx + 1}", "Save As", () => SaveAttachmentAs(msg, idx))
+                .WithMargin(4, 0, 2, 0)
+                .Build();
+            attActions.BackgroundColor = Color.Transparent;
+            _readingPane.AddControl(attActions);
+        }
+
+        var rule2 = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
+        _readingPane.AddControl(rule2);
+
+        if (msg.Attachments.Count > 1)
+        {
+            var actionBar = Controls.StatusBar()
+                .AddLeft("A", "Save All", () => SaveAllAttachments(msg))
+                .AddLeft("Ctrl+A", "Save All to...", () => SaveAllAttachmentsAs(msg))
+                .WithMargin(2, 0, 2, 0)
+                .Build();
+            actionBar.BackgroundColor = Color.Transparent;
+            _readingPane.AddControl(actionBar);
+        }
+    }
+
+    private void SaveAttachmentQuick(MailMessage msg, int index, string fileName)
+    {
+        var folder = _messageListCoordinator.CurrentFolder;
+        var account = GetCurrentAccount();
+        if (folder == null || account == null) return;
+
+        var downloadsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        var targetPath = Path.Combine(downloadsDir, fileName);
+        var msgId = $"save-{msg.Uid}-{index}";
+
+        ReplaceMessage(msgId, $"Saving {fileName}...");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var imap = new ImapService(_imapFactory.Credentials);
+                await imap.ConnectAsync(account, _cts.Token);
+                await imap.SaveAttachmentAsync(folder.Path, msg.Uid, index, targetPath, _cts.Token);
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {fileName} to ~/Downloads/",
+                    MessageSeverity.Success, timeoutSeconds: 3));
+            }
+            catch (Exception ex)
+            {
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Save failed: {ex.Message}",
+                    MessageSeverity.Error, timeoutSeconds: 5));
+            }
+        }, _cts.Token);
+    }
+
+    private void SaveAttachmentAs(MailMessage msg, int index)
+    {
+        var folder = _messageListCoordinator.CurrentFolder;
+        var account = GetCurrentAccount();
+        if (folder == null || account == null || msg.Attachments == null) return;
+
+        var fileName = msg.Attachments[index].FileName;
+
+        _ = Task.Run(async () =>
+        {
+            var dir = await SharpConsoleUI.Dialogs.FileDialogs.ShowFolderPickerAsync(_ws);
+            if (dir == null) return;
+
+            var msgId = $"saveas-{msg.Uid}-{index}";
+            EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving {fileName}..."));
+
+            var targetPath = Path.Combine(dir, fileName);
+            try
+            {
+                using var imap = new ImapService(_imapFactory.Credentials);
+                await imap.ConnectAsync(account, _cts.Token);
+                await imap.SaveAttachmentAsync(folder.Path, msg.Uid, index, targetPath, _cts.Token);
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {fileName} to {dir}",
+                    MessageSeverity.Success, timeoutSeconds: 3));
+            }
+            catch (Exception ex)
+            {
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Save failed: {ex.Message}",
+                    MessageSeverity.Error, timeoutSeconds: 5));
+            }
+        }, _cts.Token);
+    }
+
+    private void SaveAllAttachments(MailMessage msg)
+    {
+        var folder = _messageListCoordinator.CurrentFolder;
+        var account = GetCurrentAccount();
+        if (folder == null || account == null || msg.Attachments == null) return;
+
+        var downloadsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        var msgId = $"saveall-{msg.Uid}";
+        var total = msg.Attachments.Count;
+
+        ReplaceMessage(msgId, $"Saving 1/{total} attachments...");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var imap = new ImapService(_imapFactory.Credentials);
+                await imap.ConnectAsync(account, _cts.Token);
+                for (var i = 0; i < msg.Attachments.Count; i++)
+                {
+                    var att = msg.Attachments[i];
+                    var progress = i + 1;
+                    EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving {progress}/{total}: {att.FileName}..."));
+                    var targetPath = Path.Combine(downloadsDir, att.FileName);
+                    await imap.SaveAttachmentAsync(folder.Path, msg.Uid, att.Index, targetPath, _cts.Token);
+                }
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {total} attachments to ~/Downloads/",
+                    MessageSeverity.Success, timeoutSeconds: 3));
+            }
+            catch (Exception ex)
+            {
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Save failed: {ex.Message}",
+                    MessageSeverity.Error, timeoutSeconds: 5));
+            }
+        }, _cts.Token);
+    }
+
+    private void SaveAllAttachmentsAs(MailMessage msg)
+    {
+        var folder = _messageListCoordinator.CurrentFolder;
+        var account = GetCurrentAccount();
+        if (folder == null || account == null || msg.Attachments == null) return;
+
+        var total = msg.Attachments.Count;
+
+        _ = Task.Run(async () =>
+        {
+            var dir = await SharpConsoleUI.Dialogs.FileDialogs.ShowFolderPickerAsync(_ws);
+            if (dir == null) return;
+
+            var msgId = $"saveallas-{msg.Uid}";
+            EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving 1/{total} attachments..."));
+
+            try
+            {
+                using var imap = new ImapService(_imapFactory.Credentials);
+                await imap.ConnectAsync(account, _cts.Token);
+                for (var i = 0; i < msg.Attachments.Count; i++)
+                {
+                    var att = msg.Attachments[i];
+                    var progress = i + 1;
+                    EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving {progress}/{total}: {att.FileName}..."));
+                    var targetPath = Path.Combine(dir, att.FileName);
+                    await imap.SaveAttachmentAsync(folder.Path, msg.Uid, att.Index, targetPath, _cts.Token);
+                }
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {total} attachments to {dir}",
+                    MessageSeverity.Success, timeoutSeconds: 3));
+            }
+            catch (Exception ex)
+            {
+                EnqueueUiAction(() => ReplaceMessage(msgId, $"Save failed: {ex.Message}",
+                    MessageSeverity.Error, timeoutSeconds: 5));
+            }
+        }, _cts.Token);
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
     public void ClearReadingPane()
     {
-        _readingContent?.SetContent([$"  [{ColorScheme.MutedMarkup}]Select a message to read[/]"]);
+        if (_readingPane == null) return;
+        _readingPane.ClearContents();
+        var placeholder = Controls.Markup($"  [{ColorScheme.MutedMarkup}]Select a message to read[/]").Build();
+        placeholder.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _readingPane.AddControl(placeholder);
     }
 
     private MailMessage? GetSelectedMessage()
@@ -1252,7 +1471,7 @@ public class CXPostApp : IDisposable
                     {
                         try
                         {
-                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, result.AttachmentPaths, _cts.Token);
                         }
                         catch (Exception ex)
                         {
@@ -1279,7 +1498,7 @@ public class CXPostApp : IDisposable
                     {
                         try
                         {
-                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, result.AttachmentPaths, _cts.Token);
                         }
                         catch (Exception ex)
                         {
@@ -1305,7 +1524,7 @@ public class CXPostApp : IDisposable
                     {
                         try
                         {
-                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, result.AttachmentPaths, _cts.Token);
                         }
                         catch (Exception ex)
                         {
@@ -1331,7 +1550,7 @@ public class CXPostApp : IDisposable
                     {
                         try
                         {
-                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, _cts.Token);
+                            await _composeCoordinator.SendAsync(account, result.To, result.Cc, result.Subject, result.Body, result.AttachmentPaths, _cts.Token);
                         }
                         catch (Exception ex)
                         {
@@ -1540,6 +1759,37 @@ public class CXPostApp : IDisposable
                 }
             });
             e.Handled = true;
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.A && !ctrl && !shift)
+        {
+            var msg = GetSelectedMessage();
+            if (msg?.Attachments != null && msg.Attachments.Count > 1)
+            {
+                SaveAllAttachments(msg);
+                e.Handled = true;
+            }
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.A && ctrl && !shift)
+        {
+            var msg = GetSelectedMessage();
+            if (msg?.Attachments != null && msg.Attachments.Count > 1)
+            {
+                SaveAllAttachmentsAs(msg);
+                e.Handled = true;
+            }
+        }
+        else if (e.KeyInfo.Key >= ConsoleKey.D1 && e.KeyInfo.Key <= ConsoleKey.D9)
+        {
+            var msg = GetSelectedMessage();
+            var idx = (int)(e.KeyInfo.Key - ConsoleKey.D1);
+            if (msg?.Attachments != null && idx < msg.Attachments.Count)
+            {
+                if (ctrl)
+                    SaveAttachmentAs(msg, idx);
+                else
+                    SaveAttachmentQuick(msg, idx, msg.Attachments[idx].FileName);
+                e.Handled = true;
+            }
         }
         else if (e.KeyInfo.Key == KeyBindings.SwitchLayout)
         {

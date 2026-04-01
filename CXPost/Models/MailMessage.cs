@@ -20,4 +20,5 @@ public class MailMessage
     public bool HasAttachments { get; set; }
     public string? BodyPlain { get; set; }
     public bool BodyFetched { get; set; }
+    public List<AttachmentInfo>? Attachments { get; set; }
 }

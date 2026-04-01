@@ -45,7 +45,7 @@ public class SettingsDialog : DialogBase<bool>
         Modal.AddControl(Controls.Markup()
             .AddLine("[cyan1 bold]⚙  Settings[/]")
             .AddLine("[grey70]Manage accounts and preferences[/]")
-            .WithMargin(2, 2, 2, 0)
+            .WithMargin(2, 1, 2, 0)
             .Build());
 
         // Separator

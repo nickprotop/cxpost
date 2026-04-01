@@ -9,7 +9,7 @@ public interface IImapService
     bool IsConnected { get; }
     Task<List<MailFolder>> GetFoldersAsync(CancellationToken ct = default);
     Task<List<MailMessage>> FetchHeadersAsync(string folderPath, uint? sinceUid = null, CancellationToken ct = default);
-    Task<string?> FetchBodyAsync(string folderPath, uint uid, CancellationToken ct = default);
+    Task<(string? body, List<Models.AttachmentInfo> attachments)> FetchBodyAsync(string folderPath, uint uid, CancellationToken ct = default);
     Task SetFlagsAsync(string folderPath, uint uid, bool? isRead = null, bool? isFlagged = null, CancellationToken ct = default);
     Task MoveMessageAsync(string sourcePath, string destPath, uint uid, CancellationToken ct = default);
     Task DeleteMessageAsync(string folderPath, uint uid, CancellationToken ct = default);
@@ -21,4 +21,5 @@ public interface IImapService
     Task IdleAsync(string folderPath, Action onNewMessage, CancellationToken ct = default);
     Task<uint> GetUidValidityAsync(string folderPath, CancellationToken ct = default);
     Task<HashSet<uint>> GetUidsAsync(string folderPath, CancellationToken ct = default);
+    Task SaveAttachmentAsync(string folderPath, uint uid, int attachmentIndex, string targetPath, CancellationToken ct = default);
 }

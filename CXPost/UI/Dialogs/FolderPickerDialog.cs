@@ -30,7 +30,7 @@ public class FolderPickerDialog : DialogBase<MailFolder?>
         Modal.AddControl(Controls.Markup()
             .AddLine("[cyan1 bold]📁  Move to Folder[/]")
             .AddLine("[grey70]Select destination folder[/]")
-            .WithMargin(2, 2, 2, 0)
+            .WithMargin(2, 1, 2, 0)
             .Build());
 
         // Separator

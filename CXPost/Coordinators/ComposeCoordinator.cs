@@ -30,7 +30,7 @@ public class ComposeCoordinator
         _notifications = notifications;
     }
 
-    public async Task SendAsync(Account account, string to, string? cc, string subject, string body, CancellationToken ct)
+    public async Task SendAsync(Account account, string to, string? cc, string subject, string body, List<string>? attachmentPaths, CancellationToken ct)
     {
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(account.Name, account.Email));
@@ -71,7 +71,32 @@ public class ComposeCoordinator
         if (!string.IsNullOrEmpty(account.Signature))
             bodyWithSig = body + "\n\n" + account.Signature;
 
-        message.Body = new TextPart("plain") { Text = bodyWithSig };
+        if (attachmentPaths != null && attachmentPaths.Count > 0)
+        {
+            var multipart = new Multipart("mixed");
+            multipart.Add(new TextPart("plain") { Text = bodyWithSig });
+
+            foreach (var path in attachmentPaths)
+            {
+                if (!File.Exists(path))
+                    throw new FileNotFoundException($"Attachment not found: {path}");
+
+                var mimeType = MimeTypes.GetMimeType(path);
+                var attachment = new MimePart(mimeType)
+                {
+                    Content = new MimeContent(File.OpenRead(path)),
+                    ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+                    ContentTransferEncoding = ContentEncoding.Base64,
+                    FileName = Path.GetFileName(path)
+                };
+                multipart.Add(attachment);
+            }
+            message.Body = multipart;
+        }
+        else
+        {
+            message.Body = new TextPart("plain") { Text = bodyWithSig };
+        }
 
         // Send via SMTP (connect-send-disconnect to avoid stale connections)
         if (!_smtp.IsConnected)

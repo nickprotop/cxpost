@@ -125,7 +125,7 @@ public class ImapService : IImapService, IDisposable
         return messages;
     }
 
-    public async Task<string?> FetchBodyAsync(string folderPath, uint uid, CancellationToken ct = default)
+    public async Task<(string? body, List<Models.AttachmentInfo> attachments)> FetchBodyAsync(string folderPath, uint uid, CancellationToken ct = default)
     {
         // Use a separate connection for body fetch to avoid conflicting
         // with the main connection (which may be in IDLE or syncing)
@@ -153,8 +153,27 @@ public class ImapService : IImapService, IDisposable
         await folder.CloseAsync(false, ct);
         await client.DisconnectAsync(true, ct);
 
-        // Prefer HTML (we render it as rich markup), fall back to plain text
-        return message.HtmlBody ?? message.TextBody;
+        var attachments = new List<Models.AttachmentInfo>();
+        var attachIndex = 0;
+        foreach (var attachment in message.Attachments)
+        {
+            var fileName = attachment is MimePart mp ? mp.FileName : null;
+            long size = 0;
+            if (attachment is MimePart mp2 && mp2.Content?.Stream != null)
+            {
+                try { size = mp2.Content.Stream.Length; } catch { }
+            }
+            attachments.Add(new Models.AttachmentInfo
+            {
+                FileName = fileName ?? $"attachment_{attachIndex}",
+                Size = size,
+                MimeType = attachment.ContentType?.MimeType ?? "application/octet-stream",
+                Index = attachIndex
+            });
+            attachIndex++;
+        }
+
+        return (message.HtmlBody ?? message.TextBody, attachments);
     }
 
     public async Task SetFlagsAsync(string folderPath, uint uid, bool? isRead = null, bool? isFlagged = null, CancellationToken ct = default)
@@ -300,6 +319,66 @@ public class ImapService : IImapService, IDisposable
         var all = await folder.SearchAsync(SearchQuery.All, ct);
         await folder.CloseAsync(false, ct);
         return all.Select(u => u.Id).ToHashSet();
+    }
+
+    public async Task SaveAttachmentAsync(string folderPath, uint uid, int attachmentIndex,
+        string targetPath, CancellationToken ct = default)
+    {
+        if (_account == null)
+            throw new InvalidOperationException("No account configured. Call ConnectAsync first.");
+
+        using var client = new ImapClient();
+        var socketOptions = _account.ImapSecurity switch
+        {
+            SecurityType.Ssl => SecureSocketOptions.SslOnConnect,
+            SecurityType.StartTls => SecureSocketOptions.StartTls,
+            _ => SecureSocketOptions.None
+        };
+        await client.ConnectAsync(_account.ImapHost, _account.ImapPort, socketOptions, ct);
+
+        var password = _credentials.GetPassword(_account.Id) ?? string.Empty;
+        await client.AuthenticateAsync(
+            _account.Username.Length > 0 ? _account.Username : _account.Email,
+            password, ct);
+
+        var folder = await client.GetFolderAsync(folderPath, ct);
+        await folder.OpenAsync(FolderAccess.ReadOnly, ct);
+
+        var message = await folder.GetMessageAsync(new UniqueId(uid), ct);
+        await folder.CloseAsync(false, ct);
+        await client.DisconnectAsync(true, ct);
+
+        var attachments = message.Attachments.ToList();
+        if (attachmentIndex < 0 || attachmentIndex >= attachments.Count)
+            throw new ArgumentOutOfRangeException(nameof(attachmentIndex));
+
+        var attachment = attachments[attachmentIndex];
+        if (attachment is MimePart part)
+        {
+            var finalPath = GetUniqueFilePath(targetPath);
+            var dir = Path.GetDirectoryName(finalPath);
+            if (dir != null && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            using var stream = File.Create(finalPath);
+            await part.Content.DecodeToAsync(stream, ct);
+        }
+    }
+
+    private static string GetUniqueFilePath(string path)
+    {
+        if (!File.Exists(path)) return path;
+        var dir = Path.GetDirectoryName(path) ?? ".";
+        var name = Path.GetFileNameWithoutExtension(path);
+        var ext = Path.GetExtension(path);
+        var counter = 1;
+        string candidate;
+        do
+        {
+            candidate = Path.Combine(dir, $"{name} ({counter}){ext}");
+            counter++;
+        } while (File.Exists(candidate));
+        return candidate;
     }
 
     private void EnsureConnected()

@@ -28,7 +28,7 @@ public abstract class DialogBase<TResult>
         var (w, h) = GetSize();
         var builder = new WindowBuilder(WindowSystem)
             .AsModal()
-            .WithTitle(GetTitle())
+            .HideTitle()
             .WithSize(w, h)
             .Centered()
             .Resizable(GetResizable())
@@ -36,8 +36,8 @@ public abstract class DialogBase<TResult>
             .Minimizable(false)
             .Maximizable(false)
             .WithColors(Color.Grey93, ColorScheme.WindowBackground)
-            .WithBorderStyle(BorderStyle.DoubleLine)
-            .WithBorderColor(ColorScheme.BorderColor);
+            .WithBorderStyle(BorderStyle.Rounded)
+            .WithBorderColor(Color.Grey35);
 
         return builder.Build();
     }

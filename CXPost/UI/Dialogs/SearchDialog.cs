@@ -31,7 +31,7 @@ public class SearchDialog : DialogBase<string?>
         Modal.AddControl(Controls.Markup()
             .AddLine("[cyan1 bold]\U0001f50d  Search Messages[/]")
             .AddLine("[grey70]Search by subject, sender, or body[/]")
-            .WithMargin(2, 2, 2, 0)
+            .WithMargin(2, 1, 2, 0)
             .Build());
 
         // Separator

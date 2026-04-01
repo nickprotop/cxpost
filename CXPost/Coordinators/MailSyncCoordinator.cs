@@ -151,19 +151,23 @@ public class MailSyncCoordinator
 
     public async Task FetchBodyAsync(MailFolder folder, MailMessage message, CancellationToken ct)
     {
-        if (message.BodyFetched) return;
+        // If body is cached but attachments aren't populated yet, still need to fetch
+        if (message.BodyFetched && (message.Attachments != null || !message.HasAttachments))
+            return;
 
-        // FetchBodyAsync creates its own connection internally, safe without lock
         var account = _configService.Load().Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
         if (account == null) return;
         var imap = _imapFactory.GetConnection(account);
-        var body = await imap.FetchBodyAsync(folder.Path, message.Uid, ct);
-        if (body != null)
+        var (body, attachments) = await imap.FetchBodyAsync(folder.Path, message.Uid, ct);
+
+        if (!message.BodyFetched && body != null)
         {
             _cache.StoreBody(folder.Id, message.Uid, body);
             message.BodyPlain = body;
             message.BodyFetched = true;
         }
+
+        message.Attachments = attachments.Count > 0 ? attachments : null;
     }
 
     public async Task StartIdleAsync(Account account, string folderPath, CancellationToken ct)

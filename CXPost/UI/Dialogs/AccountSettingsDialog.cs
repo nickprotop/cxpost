@@ -61,7 +61,7 @@ public class AccountSettingsDialog : DialogBase<Account?>
         Modal.AddControl(Controls.Markup()
             .AddLine($"[cyan1 bold]\u2709  {title}[/]")
             .AddLine($"[grey70]{subtitle}[/]")
-            .WithMargin(2, 2, 2, 0)
+            .WithMargin(2, 1, 2, 0)
             .Build());
 
         var separator = Controls.RuleBuilder().WithColor(Color.Grey23).Build();
