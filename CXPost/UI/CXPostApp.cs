@@ -53,7 +53,7 @@ public class CXPostApp : IDisposable
     // Status bar controls
     private MarkupControl? _topStatusRight;
     private MarkupControl? _leftPanelHeader;
-    private MarkupControl? _rightPanelHeader;
+    private StatusBarControl? _rightPanelHeader;
     private MarkupControl? _previewPanelHeader;
 
     // Track preview column and its splitter for wide layout visibility
@@ -68,6 +68,12 @@ public class CXPostApp : IDisposable
 
     // Aggregated folder lookup for in-place tree updates
     private Dictionary<string, List<MailFolder>> _aggregatedFolders = new(StringComparer.OrdinalIgnoreCase);
+    private bool _isAggregatedView;
+
+    // Search state
+    private bool _isSearchActive;
+    private string? _activeSearchQuery;
+    private readonly List<string> _recentSearches = [];
 
     public CXPostApp(
         ConsoleWindowSystem ws,
@@ -160,9 +166,11 @@ public class CXPostApp : IDisposable
             .WithMargin(1, 0, 0, 0)
             .Build();
 
-        _rightPanelHeader = Controls.Markup("[grey70]Messages[/]")
+        _rightPanelHeader = Controls.StatusBar()
+            .AddLeftText("[grey70]Messages[/]")
             .WithMargin(1, 0, 0, 0)
             .Build();
+        _rightPanelHeader.BackgroundColor = Color.Transparent;
 
         _previewPanelHeader = Controls.Markup("[grey70]Preview[/]")
             .WithMargin(1, 0, 0, 0)
@@ -244,7 +252,7 @@ public class CXPostApp : IDisposable
 
         // ── Build window with gradient background ────────────────────────────
 
-        var gradient = ColorGradient.FromColors(new Color(20, 25, 40), new Color(8, 8, 15));
+        var gradient = ColorGradient.FromColors(new Color(25, 32, 52), new Color(7, 7, 13));
 
         _mainWindow = new WindowBuilder(_ws)
             .HideTitle()
@@ -278,8 +286,8 @@ public class CXPostApp : IDisposable
         // Show "All Accounts" dashboard on startup
         ShowDashboardView(
             Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
-        _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard");
-        _rightPanelHeader?.SetContent([$"[grey70]Dashboard[/]"]);
+        _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
+        SetRightPanelHeader("[grey70]Dashboard[/]");
 
         // Update initial status
         _statusBar.UpdateConnectionStatus(0, false);
@@ -781,8 +789,13 @@ public class CXPostApp : IDisposable
 
     private void OnFolderSelected(object? sender, TreeNodeEventArgs args)
     {
+        // Clear search state when navigating to a different folder
+        _isSearchActive = false;
+        _activeSearchQuery = null;
+
         if (args.Node?.Tag is FolderTag ft)
         {
+            _isAggregatedView = false;
             var folder = FindFolderById(ft.FolderId);
             if (folder == null) return;
 
@@ -793,8 +806,10 @@ public class CXPostApp : IDisposable
             PopulateMessageList(messages);
 
             var account = _config.Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
-            _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName);
-            _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({messages.Count})[/]"]);
+            _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName,
+                onAppClick: NavigateToAllAccounts,
+                onAccountClick: account != null ? () => NavigateToAccount(account.Id) : null);
+            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]");
 
             ClearReadingPane();
             UpdateHelpBar();
@@ -802,6 +817,7 @@ public class CXPostApp : IDisposable
         }
         else if (args.Node?.Tag is AggregatedTag agg)
         {
+            _isAggregatedView = true;
             if (_aggregatedFolders.TryGetValue(agg.TypeKey, out var aggregatedFolders) && aggregatedFolders.Count > 0)
             {
                 ShowMessageListView();
@@ -818,8 +834,10 @@ public class CXPostApp : IDisposable
                 allMessages.Sort((a, b) => b.Date.CompareTo(a.Date));
                 PopulateMessageList(allMessages);
 
-                _statusBar.UpdateBreadcrumb("All Accounts", agg.TypeKey);
-                _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50]({allMessages.Count})[/]"]);
+                _statusBar.UpdateBreadcrumb("All Accounts", agg.TypeKey,
+                    onAppClick: NavigateToAllAccounts,
+                    onAccountClick: NavigateToAllAccounts);
+                SetRightPanelHeader($"[grey70]Messages[/] [grey50]({allMessages.Count})[/]");
 
                 ClearReadingPane();
                 UpdateHelpBar();
@@ -828,25 +846,29 @@ public class CXPostApp : IDisposable
         }
         else if (args.Node?.Tag is AccountTag acctTag)
         {
+            _isAggregatedView = false;
             var account = _config.Accounts.FirstOrDefault(a => a.Id == acctTag.AccountId);
             if (account != null)
             {
                 ShowDashboardView(
                     Components.AccountDashboard.BuildAccountDashboard(account, _cacheService));
 
-                _statusBar.UpdateBreadcrumb(account.Name, "Dashboard");
-                _rightPanelHeader?.SetContent([$"[grey70]Account Dashboard[/]"]);
+                _statusBar.UpdateBreadcrumb(account.Name, "Dashboard",
+                    onAppClick: NavigateToAllAccounts);
+                SetRightPanelHeader("[grey70]Account Dashboard[/]");
                 UpdateHelpBar();
                 UpdateToolbar();
             }
         }
         else if (args.Node?.Tag is string tag && tag == "all-accounts")
         {
+            _isAggregatedView = false;
             ShowDashboardView(
                 Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
 
-            _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard");
-            _rightPanelHeader?.SetContent([$"[grey70]Dashboard[/]"]);
+            _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard",
+                onAppClick: NavigateToAllAccounts);
+            SetRightPanelHeader("[grey70]Dashboard[/]");
             UpdateHelpBar();
             UpdateToolbar();
         }
@@ -900,7 +922,92 @@ public class CXPostApp : IDisposable
 
     public void RefreshFolderTree() => PopulateFolderTree();
 
-    public void RefreshCurrentMessageList() => _messageListCoordinator.RefreshMessageList();
+    public void RefreshCurrentMessageList()
+    {
+        if (_isSearchActive) return;
+        _messageListCoordinator.RefreshMessageList();
+    }
+
+    private void SetRightPanelHeader(string text, string? clearAction = null)
+    {
+        if (_rightPanelHeader == null) return;
+        _rightPanelHeader.ClearAll();
+        _rightPanelHeader.AddLeftText(text);
+        if (clearAction != null)
+        {
+            _rightPanelHeader.AddLeftSeparator();
+            _rightPanelHeader.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u2715 {clearAction}[/]", () => ClearSearch());
+        }
+    }
+
+    private void NavigateToAllAccounts()
+    {
+        _isSearchActive = false;
+        _activeSearchQuery = null;
+        _isAggregatedView = false;
+
+        // Select tree node
+        var allNode = _folderTree?.FindNodeByTag("all-accounts");
+        if (allNode != null && _folderTree != null)
+            _folderTree.SelectNode(allNode);
+
+        // Always show the dashboard (SelectNode may not fire event if already selected)
+        ShowDashboardView(
+            Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
+        _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
+        SetRightPanelHeader("[grey70]Dashboard[/]");
+        UpdateHelpBar();
+        UpdateToolbar();
+    }
+
+    private void NavigateToAccount(string accountId)
+    {
+        _isSearchActive = false;
+        _activeSearchQuery = null;
+        _isAggregatedView = false;
+
+        var account = _config.Accounts.FirstOrDefault(a => a.Id == accountId);
+        if (account == null) return;
+
+        // Select tree node
+        var accountNode = _folderTree?.FindNodeByTag(new AccountTag(accountId));
+        if (accountNode != null && _folderTree != null)
+            _folderTree.SelectNode(accountNode);
+
+        // Always show the dashboard
+        ShowDashboardView(
+            Components.AccountDashboard.BuildAccountDashboard(account, _cacheService));
+        _statusBar.UpdateBreadcrumb(account.Name, "Dashboard", onAppClick: NavigateToAllAccounts);
+        SetRightPanelHeader("[grey70]Account Dashboard[/]");
+        UpdateHelpBar();
+        UpdateToolbar();
+    }
+
+    private void ClearSearch()
+    {
+        if (!_isSearchActive) return;
+        _isSearchActive = false;
+        _activeSearchQuery = null;
+
+        // Restore the folder's full message list
+        _messageListCoordinator.RefreshMessageList();
+
+        // Restore header
+        var folder = _messageListCoordinator.CurrentFolder;
+        if (folder != null)
+        {
+            var messages = _cacheService.GetMessages(folder.Id);
+            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]");
+        }
+        else
+        {
+            SetRightPanelHeader("[grey70]Messages[/]");
+        }
+
+        ClearReadingPane();
+        UpdateHelpBar();
+        UpdateToolbar();
+    }
 
     public void ShowError(string message) => _messageBar?.ShowError(message);
 
@@ -928,12 +1035,29 @@ public class CXPostApp : IDisposable
     {
         if (_messageTable == null) return;
 
-        // Build lookup of incoming messages by UID
-        var incoming = new Dictionary<uint, (int index, MailMessage msg)>();
-        for (var i = 0; i < messages.Count; i++)
-            incoming[messages[i].Uid] = (i, messages[i]);
+        // Track if the currently selected message gets removed
+        uint? selectedUid = null;
+        var selIdx = _messageTable.SelectedRowIndex;
+        if (selIdx >= 0 && selIdx < _messageTable.RowCount)
+        {
+            var selRow = _messageTable.GetRow(selIdx);
+            if (selRow.Tag is MailMessage selMsg)
+                selectedUid = selMsg.Uid;
+        }
 
-        // Build lookup of existing rows by UID
+        // Build set of incoming UIDs
+        var incomingUids = new HashSet<uint>(messages.Select(m => m.Uid));
+        var selectedWasRemoved = selectedUid.HasValue && !incomingUids.Contains(selectedUid.Value);
+
+        // Remove rows not in incoming (reverse order to keep indices stable)
+        for (var i = _messageTable.RowCount - 1; i >= 0; i--)
+        {
+            var row = _messageTable.GetRow(i);
+            if (row.Tag is MailMessage m && !incomingUids.Contains(m.Uid))
+                _messageTable.RemoveRow(i);
+        }
+
+        // Build lookup of existing rows by UID → current index
         var existing = new Dictionary<uint, int>();
         for (var i = 0; i < _messageTable.RowCount; i++)
         {
@@ -942,50 +1066,54 @@ public class CXPostApp : IDisposable
                 existing[m.Uid] = i;
         }
 
-        // Remove rows not in incoming (reverse order to keep indices stable)
-        var removeIndices = existing
-            .Where(kv => !incoming.ContainsKey(kv.Key))
-            .Select(kv => kv.Value)
-            .OrderByDescending(i => i)
-            .ToList();
-        foreach (var idx in removeIndices)
-            _messageTable.RemoveRow(idx);
-
-        // Rebuild existing lookup after removals (indices shifted)
-        existing.Clear();
-        for (var i = 0; i < _messageTable.RowCount; i++)
+        // Walk desired order: update existing, insert new
+        for (var i = 0; i < messages.Count; i++)
         {
-            var row = _messageTable.GetRow(i);
-            if (row.Tag is MailMessage m)
-                existing[m.Uid] = i;
-        }
+            var msg = messages[i];
+            var (star, from, subject, date) = FormatMessageRow(msg);
 
-        // Update existing rows in-place
-        foreach (var kv in existing)
-        {
-            if (incoming.TryGetValue(kv.Key, out var pair))
+            if (existing.TryGetValue(msg.Uid, out var rowIdx))
             {
-                var (star, from, subject, date) = FormatMessageRow(pair.msg);
-                _messageTable.UpdateCell(kv.Value, 0, star);
-                _messageTable.UpdateCell(kv.Value, 1, from);
-                _messageTable.UpdateCell(kv.Value, 2, subject);
-                _messageTable.UpdateCell(kv.Value, 3, date);
-                _messageTable.GetRow(kv.Value).Tag = pair.msg;
+                // Update in-place
+                _messageTable.UpdateCell(rowIdx, 0, star);
+                _messageTable.UpdateCell(rowIdx, 1, from);
+                _messageTable.UpdateCell(rowIdx, 2, subject);
+                _messageTable.UpdateCell(rowIdx, 3, date);
+                _messageTable.GetRow(rowIdx).Tag = msg;
+            }
+            else
+            {
+                // Insert at correct position
+                var row = new TableRow(star, from, subject, date) { Tag = msg };
+                _messageTable.InsertRow(i, row);
+
+                // Rebuild lookup — indices after insertion shifted
+                existing.Clear();
+                for (var j = 0; j < _messageTable.RowCount; j++)
+                {
+                    var r = _messageTable.GetRow(j);
+                    if (r.Tag is MailMessage m)
+                        existing[m.Uid] = j;
+                }
             }
         }
 
-        // If there are new messages, rebuild fully (safe — avoids stale-index issues)
-        var hasNewMessages = messages.Any(m => !existing.ContainsKey(m.Uid));
-        if (hasNewMessages)
+        // If the previously selected message was removed, update the reading pane
+        if (selectedWasRemoved)
         {
-            _messageTable.ClearRows();
-            foreach (var msg in messages)
+            var nextMsg = GetSelectedMessage();
+            if (nextMsg != null)
             {
-                var (star, from, subject, date) = FormatMessageRow(msg);
-                var row = new TableRow(star, from, subject, date);
-                row.Tag = msg;
-                _messageTable.AddRow(row);
+                ShowMessagePreview(nextMsg);
+                UpdatePreviewHeader(nextMsg);
             }
+            else
+            {
+                ClearReadingPane();
+                UpdatePreviewHeader();
+            }
+            UpdateHelpBar();
+            UpdateToolbar();
         }
     }
 
@@ -1014,22 +1142,18 @@ public class CXPostApp : IDisposable
         UpdateHelpBar();
         UpdateToolbar();
 
-        // Fetch body in background if not cached
-        if (!msg.BodyFetched)
+        _messageListCoordinator.SelectMessage(msg);
+        _ = Task.Run(async () =>
         {
-            _messageListCoordinator.SelectMessage(msg);
-            _ = Task.Run(async () =>
+            try
             {
-                try
-                {
-                    await _messageListCoordinator.FetchAndShowBodyAsync(msg, _cts.Token);
-                }
-                catch (Exception ex)
-                {
-                    EnqueueUiAction(() => ShowError($"Failed to load message: {ex.Message}"));
-                }
-            }, _cts.Token);
-        }
+                await _messageListCoordinator.FetchAndShowBodyAsync(msg, _cts.Token);
+            }
+            catch (Exception ex)
+            {
+                EnqueueUiAction(() => ShowError($"Failed to load message: {ex.Message}"));
+            }
+        }, _cts.Token);
     }
 
     private void OnMessageActivated(object? sender, int rowIndex)
@@ -1078,9 +1202,9 @@ public class CXPostApp : IDisposable
 
         _readingContent.SetContent(lines);
 
-        // Update right header with scroll hint
-        if (_readingPane != null && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
-            _rightPanelHeader?.SetContent([$"[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]"]);
+        // Update right header with scroll hint (don't overwrite search header)
+        if (!_isSearchActive && _readingPane != null && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
+            SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]");
     }
 
     public void ClearReadingPane()
@@ -1110,7 +1234,12 @@ public class CXPostApp : IDisposable
         var ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
         var shift = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Shift);
 
-        if (ctrl && e.KeyInfo.Key == KeyBindings.ComposeNew)
+        if (e.KeyInfo.Key == ConsoleKey.Escape && _isSearchActive)
+        {
+            ClearSearch();
+            e.Handled = true;
+        }
+        else if (ctrl && e.KeyInfo.Key == KeyBindings.ComposeNew)
         {
             _ = Task.Run(async () =>
             {
@@ -1217,24 +1346,83 @@ public class CXPostApp : IDisposable
         {
             _ = Task.Run(async () =>
             {
-                var dialog = new SearchDialog();
+                var dialog = new SearchDialog(_recentSearches);
                 var query = await dialog.ShowAsync(_ws);
-                if (query != null && _messageListCoordinator.CurrentFolder != null)
+                if (query != null)
                 {
-                    EnqueueUiAction(() => ShowInfo($"Searching for \"{query}\"..."));
+                    // Track recent searches
+                    _recentSearches.Remove(query);
+                    _recentSearches.Insert(0, query);
+                    if (_recentSearches.Count > 5) _recentSearches.RemoveAt(5);
+
+                    _isSearchActive = true;
+                    _activeSearchQuery = query;
+
+                    // Determine search folders
+                    var searchFolders = new List<MailFolder>();
+                    if (_isAggregatedView && _aggregatedFolders.Count > 0)
+                    {
+                        foreach (var folders in _aggregatedFolders.Values)
+                            searchFolders.AddRange(folders);
+                    }
+                    else if (_messageListCoordinator.CurrentFolder != null)
+                    {
+                        searchFolders.Add(_messageListCoordinator.CurrentFolder);
+                    }
+
+                    if (searchFolders.Count == 0) return;
+
+                    // Local search — instant results from cache
+                    var localResults = new List<MailMessage>();
+                    var lowerQuery = query.ToLowerInvariant();
+                    foreach (var folder in searchFolders)
+                    {
+                        var msgs = _cacheService.GetMessages(folder.Id);
+                        localResults.AddRange(msgs.Where(m =>
+                            (m.Subject?.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (m.FromName?.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                            (m.FromAddress?.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase) ?? false)));
+                    }
+                    localResults.Sort((a, b) => b.Date.CompareTo(a.Date));
+
+                    var folderName = searchFolders.Count == 1
+                        ? searchFolders[0].DisplayName
+                        : "All Folders";
+
+                    EnqueueUiAction(() =>
+                    {
+                        PopulateMessageList(localResults);
+                        SetRightPanelHeader(
+                            $"[grey70]Search:[/] [white]{MarkupParser.Escape(query)}[/] [grey50]({localResults.Count} results in {MarkupParser.Escape(folderName)})[/]",
+                            "Clear");
+                        ShowInfo($"Searching server for \"{query}\"...");
+                    });
+
+                    // Server search — refine with IMAP results
                     try
                     {
-                        var results = await _searchCoordinator.SearchAsync(
-                            _messageListCoordinator.CurrentFolder, query, _cts.Token);
-                        EnqueueUiAction(() =>
+                        var serverResults = new List<MailMessage>();
+                        foreach (var folder in searchFolders)
                         {
-                            PopulateMessageList(results);
-                            _rightPanelHeader?.SetContent([$"[grey70]Search:[/] [white]{MarkupParser.Escape(query)}[/] [grey50]({results.Count} results)[/]"]);
-                        });
+                            var results = await _searchCoordinator.SearchAsync(folder, query, _cts.Token);
+                            serverResults.AddRange(results);
+                        }
+                        serverResults.Sort((a, b) => b.Date.CompareTo(a.Date));
+
+                        if (_isSearchActive && _activeSearchQuery == query)
+                        {
+                            EnqueueUiAction(() =>
+                            {
+                                PopulateMessageList(serverResults);
+                                SetRightPanelHeader(
+                                    $"[grey70]Search:[/] [white]{MarkupParser.Escape(query)}[/] [grey50]({serverResults.Count} results in {MarkupParser.Escape(folderName)})[/]",
+                                    "Clear");
+                            });
+                        }
                     }
                     catch (Exception ex)
                     {
-                        EnqueueUiAction(() => ShowError($"Search failed: {ex.Message}"));
+                        EnqueueUiAction(() => ShowError($"Server search failed: {ex.Message}"));
                     }
                 }
             });

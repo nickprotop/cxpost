@@ -146,7 +146,7 @@ public class MessageBar
     {
         _undoActions[id] = onUndo;
         var entry = new MessageEntry(
-            id, text + $"  [{ColorScheme.PrimaryMarkup}][Undo][/]",
+            id, text + $"  [{ColorScheme.PrimaryMarkup}][[Undo]][/]",
             MessageSeverity.Info,
             DateTime.UtcNow,
             DateTime.UtcNow.AddSeconds(timeoutSeconds),
@@ -237,7 +237,7 @@ public class MessageBar
             };
 
             var suffix = msg.Dismissable ? $" [{ColorScheme.MutedMarkup}](click to dismiss)[/]" : "";
-            lines.Add($"{icon} [{textColor}]{MarkupParser.Escape(msg.Text)}[/]{suffix}");
+            lines.Add($"{icon} [{textColor}]{msg.Text}[/]{suffix}");
         }
 
         _control.SetContent(lines);

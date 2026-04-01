@@ -175,9 +175,9 @@ public class MessageListCoordinator
         if (!message.IsRead)
         {
             var account = GetAccountForCurrentFolder();
-            if (account == null || account.MarkAsReadOnView)
+            if (account != null && account.MarkAsReadOnView)
             {
-                using var imap = await CreateEphemeralImapAsync(account!, ct);
+                using var imap = await CreateEphemeralImapAsync(account, ct);
                 await imap.SetFlagsAsync(CurrentFolder.Path, message.Uid, isRead: true, ct: ct);
                 _cache.UpdateFlags(CurrentFolder.Id, message.Uid, true, message.IsFlagged);
                 message.IsRead = true;

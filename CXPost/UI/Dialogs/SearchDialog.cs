@@ -4,16 +4,24 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Events;
 using SharpConsoleUI.Extensions;
 using SharpConsoleUI.Layout;
+using SharpConsoleUI.Parsing;
 using CXPost.UI.Components;
 
 namespace CXPost.UI.Dialogs;
 
 public class SearchDialog : DialogBase<string?>
 {
+    private readonly List<string> _recentSearches;
     private PromptControl? _searchField;
+    private ListControl? _recentList;
+
+    public SearchDialog(List<string>? recentSearches = null)
+    {
+        _recentSearches = recentSearches ?? [];
+    }
 
     protected override string GetTitle() => "Search Messages";
-    protected override (int width, int height) GetSize() => (60, 12);
+    protected override (int width, int height) GetSize() => (60, _recentSearches.Count > 0 ? 18 : 12);
     protected override bool GetResizable() => false;
     protected override string? GetDefaultResult() => null;
 
@@ -39,6 +47,34 @@ public class SearchDialog : DialogBase<string?>
         _searchField.Margin = new Margin(2, 1, 2, 0);
         Modal.AddControl(_searchField);
 
+        // Recent searches
+        if (_recentSearches.Count > 0)
+        {
+            Modal.AddControl(Controls.Markup("[grey50]Recent:[/]")
+                .WithMargin(2, 1, 2, 0)
+                .Build());
+
+            _recentList = Controls.List()
+                .WithAutoHighlightOnFocus(true)
+                .WithMargin(2, 0, 2, 0)
+                .Build();
+            _recentList.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+            foreach (var q in _recentSearches)
+            {
+                var item = new ListItem($"[grey70]{MarkupParser.Escape(q)}[/]") { Tag = q };
+                _recentList.AddItem(item);
+            }
+
+            _recentList.ItemActivated += (_, item) =>
+            {
+                if (item.Tag is string query)
+                    CloseWithResult(query);
+            };
+
+            Modal.AddControl(_recentList);
+        }
+
         // Bottom rule
         var bottomRule = Controls.RuleBuilder()
             .StickyBottom()
@@ -51,12 +87,7 @@ public class SearchDialog : DialogBase<string?>
         var searchButton = Controls.Button("[grey93]  Search (Enter)  [/]")
             .WithBackgroundColor(Color.Grey30)
             .WithFocusedBackgroundColor(Color.DarkGreen)
-            .OnClick((s, e) =>
-            {
-                var query = _searchField?.Input?.Trim();
-                if (!string.IsNullOrEmpty(query))
-                    CloseWithResult(query);
-            })
+            .OnClick((s, e) => TrySearch())
             .Build();
 
         var cancelButton = Controls.Button("[grey93]  Cancel (Esc)  [/]")
@@ -75,15 +106,20 @@ public class SearchDialog : DialogBase<string?>
         Modal.AddControl(buttonGrid);
     }
 
+    private void TrySearch()
+    {
+        var query = _searchField?.Input?.Trim();
+        if (!string.IsNullOrEmpty(query))
+            CloseWithResult(query);
+    }
+
     protected override void SetInitialFocus() => _searchField?.RequestFocus();
 
     protected override void OnKeyPressed(object? sender, KeyPressedEventArgs e)
     {
         if (e.KeyInfo.Key == ConsoleKey.Enter)
         {
-            var query = _searchField?.Input?.Trim();
-            if (!string.IsNullOrEmpty(query))
-                CloseWithResult(query);
+            TrySearch();
             e.Handled = true;
         }
         else
