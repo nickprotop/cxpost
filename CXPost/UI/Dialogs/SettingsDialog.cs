@@ -128,7 +128,7 @@ public class SettingsDialog : DialogBase<bool>
         if (idx < 0 || idx >= _config.Accounts.Count) return;
 
         var existing = _config.Accounts[idx];
-        var dialog = new AccountSetupDialog(existing);
+        var dialog = new AccountSettingsDialog(existing);
         var result = await dialog.ShowAsync(_windowSystem);
 
         if (result != null)
@@ -148,7 +148,7 @@ public class SettingsDialog : DialogBase<bool>
 
     private async Task AddAccountAsync()
     {
-        var dialog = new AccountSetupDialog();
+        var dialog = new AccountSettingsDialog();
         var result = await dialog.ShowAsync(_windowSystem);
 
         if (result != null)

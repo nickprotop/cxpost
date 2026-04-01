@@ -15,6 +15,7 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 {
     private readonly IContactsService _contacts;
     private readonly string _initialTo;
+    private readonly string _initialCc;
     private readonly string _initialSubject;
     private readonly string _initialBody;
 
@@ -26,11 +27,13 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     public ComposeDialog(
         IContactsService contacts,
         string to = "",
+        string cc = "",
         string subject = "",
         string body = "")
     {
         _contacts = contacts;
         _initialTo = to;
+        _initialCc = cc;
         _initialSubject = subject;
         _initialBody = body;
     }
@@ -73,7 +76,7 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         ccLabel.HorizontalAlignment = HorizontalAlignment.Stretch;
         Modal.AddControl(ccLabel);
 
-        _ccField = new PromptControl { Prompt = "", Input = "" };
+        _ccField = new PromptControl { Prompt = "", Input = _initialCc };
         _ccField.HorizontalAlignment = HorizontalAlignment.Stretch;
         _ccField.Margin = new Margin(2, 0, 2, 0);
         Modal.AddControl(_ccField);

@@ -43,16 +43,17 @@ public static class MessageFormatter
         return string.Join('\n', lines);
     }
 
-    public static string GetReplySubject(string? subject)
+    public static string GetReplySubject(string? subject, string prefix = "Re:")
     {
-        if (string.IsNullOrEmpty(subject)) return "Re: ";
+        if (string.IsNullOrEmpty(subject)) return $"{prefix} ";
+        if (subject.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return subject;
         if (subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase)) return subject;
-        return $"Re: {subject}";
+        return $"{prefix} {subject}";
     }
 
-    public static string GetForwardSubject(string? subject)
+    public static string GetForwardSubject(string? subject, string prefix = "Fwd:")
     {
-        if (string.IsNullOrEmpty(subject)) return "Fwd: ";
-        return $"Fwd: {subject}";
+        if (string.IsNullOrEmpty(subject)) return $"{prefix} ";
+        return $"{prefix} {subject}";
     }
 }

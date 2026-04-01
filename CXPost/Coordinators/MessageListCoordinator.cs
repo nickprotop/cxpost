@@ -8,6 +8,7 @@ public class MessageListCoordinator
 {
     private readonly ICacheService _cache;
     private readonly IImapService _imap;
+    private readonly IConfigService _configService;
     private readonly MailSyncCoordinator _sync;
     private readonly Lazy<CXPostApp> _app;
 
@@ -17,11 +18,13 @@ public class MessageListCoordinator
     public MessageListCoordinator(
         ICacheService cache,
         IImapService imap,
+        IConfigService configService,
         MailSyncCoordinator sync,
         Lazy<CXPostApp> app)
     {
         _cache = cache;
         _imap = imap;
+        _configService = configService;
         _sync = sync;
         _app = app;
     }
@@ -97,13 +100,18 @@ public class MessageListCoordinator
         await _sync.FetchBodyAsync(CurrentFolder, message, ct);
         _app.Value.EnqueueUiAction(() => _app.Value.ShowMessagePreview(message));
 
-        // Mark as read
+        // Mark as read (if account setting allows)
         if (!message.IsRead)
         {
-            await _imap.SetFlagsAsync(CurrentFolder.Path, message.Uid, isRead: true, ct: ct);
-            _cache.UpdateFlags(CurrentFolder.Id, message.Uid, true, message.IsFlagged);
-            message.IsRead = true;
-            RefreshMessageList();
+            var account = _configService.Load().Accounts
+                .FirstOrDefault(a => a.Id == CurrentFolder.AccountId);
+            if (account == null || account.MarkAsReadOnView)
+            {
+                await _imap.SetFlagsAsync(CurrentFolder.Path, message.Uid, isRead: true, ct: ct);
+                _cache.UpdateFlags(CurrentFolder.Id, message.Uid, true, message.IsFlagged);
+                message.IsRead = true;
+                RefreshMessageList();
+            }
         }
     }
 }

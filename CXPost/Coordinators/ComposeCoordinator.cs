@@ -35,6 +35,9 @@ public class ComposeCoordinator
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress(account.Name, account.Email));
 
+        if (!string.IsNullOrEmpty(account.ReplyToAddress))
+            message.ReplyTo.Add(new MailboxAddress(account.Name, account.ReplyToAddress));
+
         foreach (var addr in ParseAddresses(to))
             message.To.Add(addr);
 
@@ -42,6 +45,23 @@ public class ComposeCoordinator
         {
             foreach (var addr in ParseAddresses(cc))
                 message.Cc.Add(addr);
+        }
+
+        // Default Cc
+        if (!string.IsNullOrEmpty(account.DefaultCc))
+        {
+            foreach (var addr in ParseAddresses(account.DefaultCc))
+            {
+                if (!message.Cc.Mailboxes.Any(m => m.Address.Equals(addr.Address, StringComparison.OrdinalIgnoreCase)))
+                    message.Cc.Add(addr);
+            }
+        }
+
+        // Auto-Bcc
+        if (!string.IsNullOrEmpty(account.AutoBcc))
+        {
+            foreach (var addr in ParseAddresses(account.AutoBcc))
+                message.Bcc.Add(addr);
         }
 
         message.Subject = subject;
@@ -89,15 +109,21 @@ public class ComposeCoordinator
             to = string.Join(", ", combined);
         }
 
-        var subject = MessageFormatter.GetReplySubject(original.Subject);
-        var body = MessageFormatter.FormatQuotedReply(original);
+        var subject = MessageFormatter.GetReplySubject(original.Subject, account.ReplyPrefix);
+        var quoted = MessageFormatter.FormatQuotedReply(original);
+
+        string body;
+        if (account.SignaturePosition == SignaturePosition.AboveQuote && !string.IsNullOrEmpty(account.Signature))
+            body = "\n\n" + account.Signature + quoted;
+        else
+            body = quoted;
 
         return (to, subject, body);
     }
 
-    public (string to, string subject, string body) PrepareForward(MailMessage original)
+    public (string to, string subject, string body) PrepareForward(Account account, MailMessage original)
     {
-        var subject = MessageFormatter.GetForwardSubject(original.Subject);
+        var subject = MessageFormatter.GetForwardSubject(original.Subject, account.ForwardPrefix);
         var body = MessageFormatter.FormatForwardBody(original);
         return ("", subject, body);
     }

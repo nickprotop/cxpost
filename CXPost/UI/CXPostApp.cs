@@ -445,7 +445,7 @@ public class CXPostApp : IDisposable
 
     private async Task ShowFirstRunSetupAsync()
     {
-        var dialog = new AccountSetupDialog();
+        var dialog = new AccountSettingsDialog();
         var account = await dialog.ShowAsync(_ws);
         if (account != null)
         {
@@ -963,11 +963,11 @@ public class CXPostApp : IDisposable
         {
             _ = Task.Run(async () =>
             {
-                var dialog = new ComposeDialog(_contactsService);
+                var account = GetCurrentAccount();
+                var dialog = new ComposeDialog(_contactsService, cc: account?.DefaultCc ?? "");
                 var result = await dialog.ShowAsync(_ws);
                 if (result != null)
                 {
-                    var account = GetCurrentAccount();
                     if (account != null)
                     {
                         try
@@ -1042,7 +1042,7 @@ public class CXPostApp : IDisposable
             var account = GetCurrentAccount();
             if (msg != null && account != null)
             {
-                var (to, subject, body) = _composeCoordinator.PrepareForward(msg);
+                var (to, subject, body) = _composeCoordinator.PrepareForward(account, msg);
                 _ = Task.Run(async () =>
                 {
                     var dialog = new ComposeDialog(_contactsService, to, subject, body);
