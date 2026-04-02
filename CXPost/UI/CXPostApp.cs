@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using SharpConsoleUI;
+using SharpConsoleUI.Animation;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Events;
@@ -68,6 +69,10 @@ public class CXPostApp : IDisposable
 
     // Cancels the previous body fetch when user selects a different message
     private CancellationTokenSource? _bodyFetchCts;
+    private System.Threading.Timer? _bodyFetchDebounce;
+
+    // Reading pane content fade-in overlay
+    private float _readingFadeIntensity;
 
     // Tracks per-account background sync loops so they can be cancelled and restarted
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _syncLoopCts = new();
@@ -80,6 +85,7 @@ public class CXPostApp : IDisposable
     // Sync animation
     private static readonly string[] SpinnerFrames = ["◐", "◑", "◒", "◓"];
     private int _spinnerIndex;
+    private float _syncPulsePhase;
 
     // Search state
     private bool _isSearchActive;
@@ -177,17 +183,21 @@ public class CXPostApp : IDisposable
         // Panel headers
         _leftPanelHeader = Controls.Markup("[grey70]Folders[/]")
             .WithMargin(1, 0, 0, 0)
+            .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
+        _leftPanelHeader.BackgroundColor = ColorScheme.PanelHeaderBackground;
 
         _rightPanelHeader = Controls.StatusBar()
             .AddLeftText("[grey70]Messages[/]")
             .WithMargin(1, 0, 0, 0)
             .Build();
-        _rightPanelHeader.BackgroundColor = Color.Transparent;
+        _rightPanelHeader.BackgroundColor = ColorScheme.PanelHeaderBackground;
 
         _previewPanelHeader = Controls.Markup("[grey70]Preview[/]")
             .WithMargin(1, 0, 0, 0)
+            .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
+        _previewPanelHeader.BackgroundColor = ColorScheme.PanelHeaderBackground;
 
         // Build main grid (layout depends on _currentLayout)
         _mainGrid = Controls.HorizontalGrid()
@@ -289,6 +299,9 @@ public class CXPostApp : IDisposable
             .WithAsyncWindowThread(MainLoopAsync)
             .OnKeyPressed(OnKeyPressed)
             .Build();
+
+        // Reading pane fade-in overlay: dims just the reading pane area, then animates away
+        _mainWindow.PostBufferPaint += ReadingPaneFadeOverlay;
 
         _ws.AddWindow(_mainWindow);
         _ws.SetActiveWindow(_mainWindow);
@@ -581,10 +594,11 @@ public class CXPostApp : IDisposable
                 UpdateClockDisplay();
                 _messageBar?.Tick();
 
-                // Advance sync spinner animation
+                // Advance sync spinner animation + color pulse
                 if (_syncCoordinator.SyncingFolderIds.Count > 0)
                 {
                     _spinnerIndex = (_spinnerIndex + 1) % SpinnerFrames.Length;
+                    _syncPulsePhase = (_syncPulsePhase + 0.15f) % ((float)Math.PI * 2);
                     UpdateSyncSpinner();
                 }
 
@@ -619,12 +633,38 @@ public class CXPostApp : IDisposable
 
     private string FormatFolderNodeText(string icon, string displayName, int unread, int total, bool isSyncing = false)
     {
-        var spinner = isSyncing ? $" [cyan]{SpinnerFrames[_spinnerIndex]}[/]" : "";
+        var spinner = "";
+        if (isSyncing)
+        {
+            // Smooth color pulse between cyan and steel-blue using sine wave
+            var t = (float)(Math.Sin(_syncPulsePhase) * 0.5 + 0.5); // 0..1
+            var pulseColor = ColorBlendHelper.BlendColor(
+                new Color(70, 130, 180),  // steel blue (dim)
+                new Color(0, 255, 255),   // cyan (bright)
+                t);
+            spinner = $" [rgb({pulseColor.R},{pulseColor.G},{pulseColor.B})]{SpinnerFrames[_spinnerIndex]}[/]";
+        }
+
         if (unread > 0)
-            return $"{icon} {MarkupParser.Escape(displayName)} [yellow]({unread})[/]{spinner}";
+            return $"{icon} {MarkupParser.Escape(displayName)} {FormatUnreadBadge(unread)}{spinner}";
         if (total > 0)
             return $"{icon} {MarkupParser.Escape(displayName)} [grey35]({total})[/]{spinner}";
         return $"[grey70]{icon} {MarkupParser.Escape(displayName)}[/]{spinner}";
+    }
+
+    /// <summary>
+    /// Colors unread count badge on a gradient from muted gold (low) to bright yellow-white (high).
+    /// </summary>
+    private static string FormatUnreadBadge(int unread)
+    {
+        // Gradient from dim amber → bright yellow based on count severity
+        // 1-2: muted, 3-10: warm, 11-50: bright, 50+: hot
+        var t = Math.Clamp(unread / 50f, 0f, 1f);
+        var badgeColor = ColorBlendHelper.BlendColor(
+            new Color(180, 160, 80),  // muted gold
+            new Color(255, 240, 120), // bright warm yellow
+            t);
+        return $"[rgb({badgeColor.R},{badgeColor.G},{badgeColor.B})]({unread})[/]";
     }
 
     private MailFolder? FindFolderById(int folderId)
@@ -718,7 +758,7 @@ public class CXPostApp : IDisposable
 
         // Update "All Accounts" text with total unread
         var allText = totalUnread > 0
-            ? $"\U0001f4ec All Accounts [yellow]({totalUnread})[/]"
+            ? $"\U0001f4ec All Accounts {FormatUnreadBadge(totalUnread)}"
             : "\U0001f4ec All Accounts";
         allNode.Text = allText;
 
@@ -1161,9 +1201,33 @@ public class CXPostApp : IDisposable
     public void ShowUndoNotification(string id, string text, Action onUndo) =>
         _messageBar?.ShowWithUndo(id, text, onUndo);
 
+    private int _populatedFolderId;
+
     public void PopulateMessageList(List<MailMessage> messages)
     {
         if (_messageTable == null) return;
+
+        // Determine folder ID from messages
+        var folderId = messages.Count > 0 ? messages[0].FolderId : 0;
+        var folderChanged = folderId != _populatedFolderId;
+
+        ImapLogger.Debug($"PopulateMessageList: {messages.Count} messages, current rows={_messageTable.RowCount}, folder={folderId}, changed={folderChanged}");
+
+        // On folder change, clear and rebuild (UIDs are per-folder, diff would be wrong)
+        if (folderChanged)
+        {
+            _populatedFolderId = folderId;
+            _messageTable.ClearRows();
+            foreach (var msg in messages)
+            {
+                var (star, clip, from, subject, date) = FormatMessageRow(msg);
+                var row = new TableRow(star, clip, from, subject, date) { Tag = msg };
+                _messageTable.AddRow(row);
+            }
+            return;
+        }
+
+        // Same folder — use in-place diff
 
         // Track if the currently selected message gets removed
         uint? selectedUid = null;
@@ -1283,36 +1347,50 @@ public class CXPostApp : IDisposable
         try { oldCts?.Cancel(); } catch (ObjectDisposedException) { }
         oldCts?.Dispose();
 
-        // Fetch if body not cached, or if attachments expected but not cached yet
+        // Debounce body fetch — wait 150ms before starting connection
+        // Prevents connection storm when scrolling through messages rapidly
+        _bodyFetchDebounce?.Dispose();
+
         var needsFetch = !msg.BodyFetched || (msg.HasAttachments && msg.Attachments == null);
         if (needsFetch)
         {
-            var fetchCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-            _bodyFetchCts = fetchCts;
-            var capturedUid = msg.Uid;
-
-            _ = Task.Run(async () =>
+            var capturedMsg = msg;
+            _bodyFetchDebounce = new System.Threading.Timer(_ =>
             {
-                try
-                {
-                    await _messageListCoordinator.FetchAndShowBodyAsync(msg, fetchCts.Token);
+                // Verify this message is still selected after debounce
+                if (_messageListCoordinator.SelectedMessage?.Uid != capturedMsg.Uid) return;
 
-                    // Only update UI if this message is still selected
-                    EnqueueUiAction(() =>
-                    {
-                        if (_messageListCoordinator.SelectedMessage?.Uid == capturedUid)
-                        {
-                            ShowMessagePreview(msg);
-                            RetainMessageListFocus();
-                        }
-                    });
-                }
-                catch (OperationCanceledException) { /* superseded by newer selection */ }
-                catch (Exception ex)
+                var fetchCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+                _bodyFetchCts = fetchCts;
+
+                _ = Task.Run(async () =>
                 {
-                    EnqueueUiAction(() => ShowError($"Failed to load message: {ex.Message}"));
-                }
-            }, fetchCts.Token);
+                    try
+                    {
+                        await _messageListCoordinator.FetchAndShowBodyAsync(capturedMsg, fetchCts.Token);
+
+                        EnqueueUiAction(() =>
+                        {
+                            if (_messageListCoordinator.SelectedMessage?.Uid == capturedMsg.Uid)
+                            {
+                                ShowMessagePreview(capturedMsg);
+                                TriggerReadingPaneFadeIn();
+                                RetainMessageListFocus();
+                            }
+                        });
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        ImapLogger.Debug($"Body fetch cancelled for uid={capturedMsg.Uid} (superseded by newer selection)");
+                    }
+                    catch (Exception ex)
+                    {
+                        ImapLogger.Error($"Body fetch failed for uid={capturedMsg.Uid}: {ex.GetType().Name}: {ex.Message}", ex);
+                        if (_messageListCoordinator.SelectedMessage?.Uid == capturedMsg.Uid)
+                            EnqueueUiAction(() => ShowError($"Failed to load message: {ex.Message}"));
+                    }
+                }, fetchCts.Token);
+            }, null, 150, Timeout.Infinite);
         }
     }
 
@@ -1386,6 +1464,31 @@ public class CXPostApp : IDisposable
             SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]");
     }
 
+    private void ReadingPaneFadeOverlay(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)
+    {
+        if (_readingFadeIntensity <= 0.01f) return;
+        ColorBlendHelper.ApplyColorOverlay(buffer, Color.Black, _readingFadeIntensity, 0.5f);
+    }
+
+    private void TriggerReadingPaneFadeIn()
+    {
+        _readingFadeIntensity = 0.35f;
+        _ws.Animations.Animate(
+            from: 0.35f,
+            to: 0.0f,
+            duration: TimeSpan.FromMilliseconds(250),
+            easing: EasingFunctions.EaseOut,
+            onUpdate: t =>
+            {
+                _readingFadeIntensity = t;
+                _mainWindow?.Invalidate(redrawAll: true);
+            },
+            onComplete: () =>
+            {
+                _readingFadeIntensity = 0f;
+            });
+    }
+
     private void AddAttachmentControls(MailMessage msg)
     {
         if (_readingPane == null || msg.Attachments == null) return;
@@ -1449,15 +1552,8 @@ public class CXPostApp : IDisposable
         {
             try
             {
-                var imap = _imapFactory.GetFetchConnection(account);
-                var fetchLock = _imapFactory.GetFetchLock(account.Id);
-                await fetchLock.WaitAsync(_cts.Token);
-                try
-                {
-                    await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                    await imap.SaveAttachmentAsync(folder.Path, msg.Uid, index, targetPath, CancellationToken.None);
-                }
-                finally { fetchLock.Release(); }
+                using var imap = await _imapFactory.CreateConnectionAsync(account, _cts.Token);
+                await imap.SaveAttachmentAsync(folder.Path, msg.Uid, index, targetPath, _cts.Token);
                 EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {fileName} to ~/Downloads/",
                     MessageSeverity.Success, timeoutSeconds: 3));
             }
@@ -1519,15 +1615,8 @@ public class CXPostApp : IDisposable
             var targetPath = Path.Combine(dir, fileName);
             try
             {
-                var imap = _imapFactory.GetFetchConnection(account);
-                var fetchLock = _imapFactory.GetFetchLock(account.Id);
-                await fetchLock.WaitAsync(_cts.Token);
-                try
-                {
-                    await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                    await imap.SaveAttachmentAsync(folder.Path, msg.Uid, index, targetPath, CancellationToken.None);
-                }
-                finally { fetchLock.Release(); }
+                using var imap = await _imapFactory.CreateConnectionAsync(account, _cts.Token);
+                await imap.SaveAttachmentAsync(folder.Path, msg.Uid, index, targetPath, _cts.Token);
                 EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {fileName} to {dir}",
                     MessageSeverity.Success, timeoutSeconds: 3));
             }
@@ -1555,22 +1644,15 @@ public class CXPostApp : IDisposable
         {
             try
             {
-                var imap = _imapFactory.GetFetchConnection(account);
-                var fetchLock = _imapFactory.GetFetchLock(account.Id);
-                await fetchLock.WaitAsync(_cts.Token);
-                try
+                using var imap = await _imapFactory.CreateConnectionAsync(account, _cts.Token);
+                for (var i = 0; i < msg.Attachments.Count; i++)
                 {
-                    await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                    for (var i = 0; i < msg.Attachments.Count; i++)
-                    {
-                        var att = msg.Attachments[i];
-                        var progress = i + 1;
-                        EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving {progress}/{total}: {att.FileName}..."));
-                        var targetPath = Path.Combine(downloadsDir, att.FileName);
-                        await imap.SaveAttachmentAsync(folder.Path, msg.Uid, att.Index, targetPath, CancellationToken.None);
-                    }
+                    var att = msg.Attachments[i];
+                    var progress = i + 1;
+                    EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving {progress}/{total}: {att.FileName}..."));
+                    var targetPath = Path.Combine(downloadsDir, att.FileName);
+                    await imap.SaveAttachmentAsync(folder.Path, msg.Uid, att.Index, targetPath, _cts.Token);
                 }
-                finally { fetchLock.Release(); }
                 EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {total} attachments to ~/Downloads/",
                     MessageSeverity.Success, timeoutSeconds: 3));
             }
@@ -1600,22 +1682,15 @@ public class CXPostApp : IDisposable
 
             try
             {
-                var imap = _imapFactory.GetFetchConnection(account);
-                var fetchLock = _imapFactory.GetFetchLock(account.Id);
-                await fetchLock.WaitAsync(_cts.Token);
-                try
+                using var imap = await _imapFactory.CreateConnectionAsync(account, _cts.Token);
+                for (var i = 0; i < msg.Attachments.Count; i++)
                 {
-                    await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                    for (var i = 0; i < msg.Attachments.Count; i++)
-                    {
-                        var att = msg.Attachments[i];
-                        var progress = i + 1;
-                        EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving {progress}/{total}: {att.FileName}..."));
-                        var targetPath = Path.Combine(dir, att.FileName);
-                        await imap.SaveAttachmentAsync(folder.Path, msg.Uid, att.Index, targetPath, CancellationToken.None);
-                    }
+                    var att = msg.Attachments[i];
+                    var progress = i + 1;
+                    EnqueueUiAction(() => ReplaceMessage(msgId, $"Saving {progress}/{total}: {att.FileName}..."));
+                    var targetPath = Path.Combine(dir, att.FileName);
+                    await imap.SaveAttachmentAsync(folder.Path, msg.Uid, att.Index, targetPath, _cts.Token);
                 }
-                finally { fetchLock.Release(); }
                 EnqueueUiAction(() => ReplaceMessage(msgId, $"Saved {total} attachments to {dir}",
                     MessageSeverity.Success, timeoutSeconds: 3));
             }
@@ -1935,15 +2010,8 @@ public class CXPostApp : IDisposable
                             var account = GetAccountForMessage(msg);
                             if (account != null)
                             {
-                                var imap = _imapFactory.GetFetchConnection(account);
-                                var fetchLock = _imapFactory.GetFetchLock(account.Id);
-                                await fetchLock.WaitAsync(_cts.Token);
-                                try
-                                {
-                                    await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                                    await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, CancellationToken.None);
-                                }
-                                finally { fetchLock.Release(); }
+                                using var imap = await _imapFactory.CreateConnectionAsync(account, _cts.Token);
+                                await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
                             }
                             EnqueueUiAction(() =>
                             {
@@ -2044,7 +2112,7 @@ public class CXPostApp : IDisposable
 
                     // Reset IMAP connections to pick up credential/host changes
                     foreach (var account in _config.Accounts)
-                        _ = _imapFactory.ResetConnectionAsync(account.Id);
+                        _ = _imapFactory.ResetAllAsync(account.Id);
 
                     // Restart sync loops with updated accounts
                     StartBackgroundSync();
@@ -2074,6 +2142,7 @@ public class CXPostApp : IDisposable
     public void Dispose()
     {
         StopAllSyncLoops();
+        _bodyFetchDebounce?.Dispose();
         try { _bodyFetchCts?.Cancel(); } catch (ObjectDisposedException) { }
         _bodyFetchCts?.Dispose();
         _cts.Cancel();

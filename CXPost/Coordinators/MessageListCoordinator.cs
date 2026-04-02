@@ -32,7 +32,9 @@ public class MessageListCoordinator
     public void SelectFolder(MailFolder folder)
     {
         CurrentFolder = folder;
-        RefreshMessageList();
+        // Don't call RefreshMessageList here — the caller (OnFolderSelected)
+        // directly calls PopulateMessageList after this, and the queued
+        // RefreshMessageList would race with that and cause stale data.
     }
 
     public void SelectMessage(MailMessage message)
@@ -43,13 +45,18 @@ public class MessageListCoordinator
     public void RefreshMessageList()
     {
         if (CurrentFolder == null) return;
-        var messages = _cache.GetMessages(CurrentFolder.Id);
-        _app.Value.EnqueueUiAction(() => _app.Value.PopulateMessageList(messages));
+        var folderId = CurrentFolder.Id;
+        var messages = _cache.GetMessages(folderId);
+        _app.Value.EnqueueUiAction(() =>
+        {
+            // Only apply if this folder is still selected (prevents stale queued updates)
+            if (CurrentFolder?.Id == folderId)
+                _app.Value.PopulateMessageList(messages);
+        });
     }
 
     private Account? GetAccountForCurrentFolder()
     {
-        // Prefer message's own account (for aggregated views)
         if (SelectedMessage?.AccountId != null)
         {
             var msgAccount = _configService.Load().Accounts.FirstOrDefault(a => a.Id == SelectedMessage.AccountId);
@@ -69,19 +76,16 @@ public class MessageListCoordinator
         var account = GetAccountForFolder(folder);
         if (account == null) return;
 
-        var imap = _imapFactory.GetFetchConnection(account);
-        var fetchLock = _imapFactory.GetFetchLock(account.Id);
-        await fetchLock.WaitAsync(ct);
         var newFlag = !message.IsFlagged;
-        try
-        {
-            await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-            await imap.SetFlagsAsync(folder.Path, message.Uid, isFlagged: newFlag, ct: CancellationToken.None);
-        }
-        finally { fetchLock.Release(); }
+
+        // Update locally first (instant UI)
         _cache.UpdateFlags(folder.Id, message.Uid, message.IsRead, newFlag);
         message.IsFlagged = newFlag;
         RefreshMessageList();
+
+        // Sync to server with ephemeral connection
+        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+        await imap.SetFlagsAsync(folder.Path, message.Uid, isFlagged: newFlag, ct: ct);
     }
 
     public async Task ToggleReadAsync(MailMessage message, MailFolder folder, CancellationToken ct)
@@ -89,19 +93,16 @@ public class MessageListCoordinator
         var account = GetAccountForFolder(folder);
         if (account == null) return;
 
-        var imap = _imapFactory.GetFetchConnection(account);
-        var fetchLock = _imapFactory.GetFetchLock(account.Id);
-        await fetchLock.WaitAsync(ct);
         var newRead = !message.IsRead;
-        try
-        {
-            await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-            await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: newRead, ct: CancellationToken.None);
-        }
-        finally { fetchLock.Release(); }
+
+        // Update locally first (instant UI)
         _cache.UpdateFlags(folder.Id, message.Uid, newRead, message.IsFlagged);
         message.IsRead = newRead;
         RefreshMessageList();
+
+        // Sync to server with ephemeral connection
+        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+        await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: newRead, ct: ct);
     }
 
     /// <summary>
@@ -123,11 +124,9 @@ public class MessageListCoordinator
         var undoCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var undoId = $"undo-delete-{message.Uid}";
 
-        // Show undo notification via the app
         _app.Value.EnqueueUiAction(() =>
             _app.Value.ShowUndoNotification(undoId, "Message moved to Trash", () =>
             {
-                // Undo: restore message to cache and refresh
                 undoCts.Cancel();
                 _cache.RestoreMessage(folder.Id, message);
                 _app.Value.EnqueueUiAction(() =>
@@ -144,38 +143,30 @@ public class MessageListCoordinator
             {
                 await Task.Delay(TimeSpan.FromSeconds(5), undoCts.Token);
 
-                // Undo window expired — perform server-side delete
-                var imap = _imapFactory.GetFetchConnection(account);
-                var fetchLock = _imapFactory.GetFetchLock(account.Id);
-                await fetchLock.WaitAsync(ct);
-                try
-                {
-                    await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                    var folders = _cache.GetFolders(folder.AccountId);
-                    var trash = folders.FirstOrDefault(f =>
-                        f.Path.Equals("Trash", StringComparison.OrdinalIgnoreCase) ||
-                        f.Path.Contains("[Gmail]/Trash", StringComparison.OrdinalIgnoreCase));
+                // Undo window expired — ephemeral connection for server delete
+                using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+                var folders = _cache.GetFolders(folder.AccountId);
+                var trash = folders.FirstOrDefault(f =>
+                    f.Path.Equals("Trash", StringComparison.OrdinalIgnoreCase) ||
+                    f.Path.Contains("[Gmail]/Trash", StringComparison.OrdinalIgnoreCase));
 
-                    if (trash != null && folder.Id != trash.Id)
-                        await imap.MoveMessageAsync(folder.Path, trash.Path, message.Uid, CancellationToken.None);
-                    else
-                        await imap.DeleteMessageAsync(folder.Path, message.Uid, CancellationToken.None);
-                }
-                finally { fetchLock.Release(); }
+                if (trash != null && folder.Id != trash.Id)
+                    await imap.MoveMessageAsync(folder.Path, trash.Path, message.Uid, ct);
+                else
+                    await imap.DeleteMessageAsync(folder.Path, message.Uid, ct);
 
                 _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(undoId));
                 undoCts.Dispose();
             }
             catch (OperationCanceledException)
             {
-                // Check if this is an undo or a shutdown
                 if (undoCts.Token.IsCancellationRequested && !ct.IsCancellationRequested)
                 {
-                    // Undo was triggered — IMAP delete cancelled, message already restored
+                    // Undo triggered — message already restored
                 }
                 else
                 {
-                    // App shutdown — restore message since server delete didn't happen
+                    // App shutdown — restore since server delete didn't happen
                     _cache.RestoreMessage(folder.Id, message);
                     _app.Value.EnqueueUiAction(() =>
                     {
@@ -187,7 +178,6 @@ public class MessageListCoordinator
             }
             catch (Exception ex)
             {
-                // IMAP failed — restore message locally
                 _cache.RestoreMessage(folder.Id, message);
                 _app.Value.EnqueueUiAction(() =>
                 {
@@ -204,40 +194,31 @@ public class MessageListCoordinator
     {
         if (CurrentFolder == null) return;
 
-        // Fetch body with a timeout so we don't hang forever
         using var fetchTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         fetchTimeout.CancelAfter(TimeSpan.FromSeconds(30));
 
         await _sync.FetchBodyAsync(CurrentFolder, message, fetchTimeout.Token);
 
-        // Mark as read — fire and forget, don't block the UI for a flag update
+        // Mark as read — update locally first, then sync to server in background
         if (!message.IsRead)
         {
             var account = GetAccountForCurrentFolder();
             var folder = CurrentFolder;
             if (account != null && account.MarkAsReadOnView)
             {
-                // Update locally immediately
                 _cache.UpdateFlags(folder.Id, message.Uid, true, message.IsFlagged);
                 message.IsRead = true;
                 RefreshMessageList();
 
-                // Sync to server in background (non-blocking)
+                // Background server sync with ephemeral connection
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        var fetchLock = _imapFactory.GetFetchLock(account.Id);
-                        await fetchLock.WaitAsync(ct);
-                        try
-                        {
-                            var imap = _imapFactory.GetFetchConnection(account);
-                            await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                            await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: true, ct: CancellationToken.None);
-                        }
-                        finally { fetchLock.Release(); }
+                        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+                        await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: true, ct: ct);
                     }
-                    catch { /* best effort — local flag is already set */ }
+                    catch { /* best effort — local flag already set */ }
                 }, ct);
             }
         }

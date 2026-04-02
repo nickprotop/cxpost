@@ -62,6 +62,9 @@ public class Program
                     ShowBottomPanel: false));
             services.AddSingleton(ws);
 
+            // Initialize IMAP debug logger
+            CXPost.Services.ImapLogger.Init(ws.LogService);
+
             // Repositories
             services.AddSingleton(new MailRepository(mailConn));
             services.AddSingleton(new ContactRepository(contactsConn));

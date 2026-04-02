@@ -15,6 +15,9 @@ public static class ColorScheme
     public static readonly Color BorderColor = Color.Grey23;
     public static readonly Color ActiveBorderColor = Color.SteelBlue;
 
+    // Semi-transparent panel header — lets the gradient bleed through
+    public static readonly Color PanelHeaderBackground = new(40, 50, 70, 160);
+
     // Text
     public static readonly Color PrimaryText = Color.Cyan1;
     public static readonly Color SecondaryText = Color.Grey70;

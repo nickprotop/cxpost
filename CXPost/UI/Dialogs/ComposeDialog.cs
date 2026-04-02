@@ -1,4 +1,5 @@
 using SharpConsoleUI;
+using SharpConsoleUI.Animation;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Events;
@@ -51,6 +52,12 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     protected override bool GetResizable() => true;
     protected override bool GetMaximizable() => true;
     protected override ComposeResult? GetDefaultResult() => null;
+
+    protected override void PlayEnterAnimation()
+    {
+        WindowAnimations.SlideIn(Modal, SlideDirection.Bottom, TimeSpan.FromMilliseconds(180),
+            EasingFunctions.EaseOut);
+    }
 
     protected override void BuildContent()
     {

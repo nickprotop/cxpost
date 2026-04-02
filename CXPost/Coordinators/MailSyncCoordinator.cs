@@ -41,7 +41,11 @@ public class MailSyncCoordinator
     public async Task SyncAccountAsync(Account account, CancellationToken ct)
     {
         if (!_syncingAccounts.TryAdd(account.Id, true))
-            return; // Already syncing
+        {
+            ImapLogger.Debug($"[{account.Name}] SyncAccount skipped — already syncing");
+            return;
+        }
+        ImapLogger.Info($"[{account.Name}] SyncAccount started");
 
         var syncMsgId = $"sync-{account.Id}";
         var imap = _imapFactory.GetConnection(account);
@@ -60,16 +64,19 @@ public class MailSyncCoordinator
                 // Connect with retry — sync connection may have been dropped by server
                 if (!imap.IsConnected)
                 {
+                    ImapLogger.Debug($"[{account.Name}] Sync connection not connected, connecting...");
                     try
                     {
                         await imap.ConnectAsync(account, ct);
+                        ImapLogger.Debug($"[{account.Name}] Sync connection established");
                     }
-                    catch when (!ct.IsCancellationRequested)
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
                     {
-                        // First attempt failed — wait briefly and retry once
+                        ImapLogger.Warn($"[{account.Name}] Sync connect failed: {ex.Message} — retrying in 2s");
                         await Task.Delay(2000, ct);
                         try { await imap.DisconnectAsync(CancellationToken.None); } catch { }
                         await imap.ConnectAsync(account, ct);
+                        ImapLogger.Debug($"[{account.Name}] Sync retry connected");
                     }
                 }
 
@@ -125,6 +132,7 @@ public class MailSyncCoordinator
                 _configService.Save(config);
             }
 
+            ImapLogger.Info($"[{account.Name}] SyncAccount completed: {totalMessages} new messages");
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
@@ -134,14 +142,15 @@ public class MailSyncCoordinator
         }
         catch (OperationCanceledException)
         {
+            ImapLogger.Debug($"[{account.Name}] SyncAccount cancelled");
             _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(syncMsgId));
         }
         catch (Exception ex)
         {
+            ImapLogger.Error($"[{account.Name}] SyncAccount failed: {ex.Message}", ex);
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
-                // Show as warning, not error — sync will retry automatically
                 _app.Value.ShowWarning($"{account.Name}: Sync retry — {ex.Message}");
             });
         }
@@ -195,42 +204,35 @@ public class MailSyncCoordinator
 
         var key = $"{folder.Id}:{message.Uid}";
         if (!_fetchingBodies.TryAdd(key, true))
-            return; // Another fetch in progress for this message
+        {
+            ImapLogger.Debug($"FetchBody skipped — already fetching {key}");
+            return;
+        }
+
+        ImapLogger.Debug($"FetchBody started: folder={folder.DisplayName} uid={message.Uid} subject={message.Subject}");
 
         try
         {
             var account = _configService.Load().Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
             if (account == null) return;
 
-            var imap = _imapFactory.GetFetchConnection(account);
-            var fetchLock = _imapFactory.GetFetchLock(account.Id);
-            await fetchLock.WaitAsync(ct);
-            try
-            {
-                ct.ThrowIfCancellationRequested();
-                await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
-                ct.ThrowIfCancellationRequested();
-                // Use CancellationToken.None for the actual IMAP operation —
-                // cancelling mid-operation corrupts the persistent connection.
-                // We check ct between steps instead.
-                var (body, attachments) = await imap.FetchBodyAsync(folder.Path, message.Uid, CancellationToken.None);
+            // Ephemeral connection — no lock needed, properly cancellable
+            using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+            ImapLogger.Debug($"FetchBody({key}) fetching from server...");
+            var (body, attachments) = await imap.FetchBodyAsync(folder.Path, message.Uid, ct);
+            ImapLogger.Debug($"FetchBody({key}) received body={body?.Length ?? 0} chars, {attachments.Count} attachments");
 
-                if (!message.BodyFetched && body != null)
-                {
-                    var attachmentList = attachments.Count > 0 ? attachments : null;
-                    _cache.StoreBody(folder.Id, message.Uid, body, attachmentList);
-                    message.BodyPlain = body;
-                    message.BodyFetched = true;
-                    message.Attachments = attachmentList;
-                }
-                else if (message.Attachments == null && attachments.Count > 0)
-                {
-                    message.Attachments = attachments;
-                }
-            }
-            finally
+            if (!message.BodyFetched && body != null)
             {
-                fetchLock.Release();
+                var attachmentList = attachments.Count > 0 ? attachments : null;
+                _cache.StoreBody(folder.Id, message.Uid, body, attachmentList);
+                message.BodyPlain = body;
+                message.BodyFetched = true;
+                message.Attachments = attachmentList;
+            }
+            else if (message.Attachments == null && attachments.Count > 0)
+            {
+                message.Attachments = attachments;
             }
         }
         finally

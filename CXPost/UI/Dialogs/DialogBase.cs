@@ -1,5 +1,9 @@
 using SharpConsoleUI;
+using SharpConsoleUI.Animation;
 using SharpConsoleUI.Builders;
+using SharpConsoleUI.Helpers;
+using SharpConsoleUI.Layout;
+using SharpConsoleUI.Windows;
 using CXPost.UI.Components;
 
 namespace CXPost.UI.Dialogs;
@@ -11,14 +15,27 @@ public abstract class DialogBase<TResult>
     protected Window Modal { get; private set; } = null!;
     protected ConsoleWindowSystem WindowSystem { get; private set; } = null!;
 
+    // Dim overlay state
+    private readonly List<(Window window, WindowRenderer.BufferPaintDelegate handler)> _dimOverlays = [];
+    private float _dimIntensity;
+    private const float DimTarget = 0.45f;
+
     public Task<TResult> ShowAsync(ConsoleWindowSystem windowSystem)
     {
         WindowSystem = windowSystem;
         Modal = CreateModal();
         BuildContent();
         AttachEventHandlers();
+
+        // Apply dim overlay to all existing windows before showing modal
+        ApplyDimOverlay();
+
         WindowSystem.AddWindow(Modal);
         WindowSystem.SetActiveWindow(Modal);
+
+        // Animate the modal entrance
+        PlayEnterAnimation();
+
         SetInitialFocus();
         return _tcs.Task;
     }
@@ -51,6 +68,14 @@ public abstract class DialogBase<TResult>
     protected virtual TResult GetDefaultResult() => default!;
     protected virtual void OnCleanup() { }
 
+    /// <summary>
+    /// Override to change the modal entrance animation. Default is a quick fade-in.
+    /// </summary>
+    protected virtual void PlayEnterAnimation()
+    {
+        WindowAnimations.FadeIn(Modal, TimeSpan.FromMilliseconds(120));
+    }
+
     protected void CloseWithResult(TResult result)
     {
         Result = result;
@@ -66,6 +91,38 @@ public abstract class DialogBase<TResult>
         }
     }
 
+    private void ApplyDimOverlay()
+    {
+        _dimIntensity = DimTarget;
+        var dimColor = Color.Black;
+
+        foreach (var window in WindowSystem.Windows.Values)
+        {
+            if (window == Modal) continue;
+
+            WindowRenderer.BufferPaintDelegate handler =
+                (CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect) =>
+                {
+                    if (_dimIntensity <= 0.01f) return;
+                    ColorBlendHelper.ApplyColorOverlay(buffer, dimColor, _dimIntensity, 0.6f);
+                };
+
+            window.PostBufferPaint += handler;
+            window.Invalidate(redrawAll: true);
+            _dimOverlays.Add((window, handler));
+        }
+    }
+
+    private void RemoveDimOverlay()
+    {
+        foreach (var (window, handler) in _dimOverlays)
+        {
+            window.PostBufferPaint -= handler;
+            window.Invalidate(redrawAll: true);
+        }
+        _dimOverlays.Clear();
+    }
+
     private void AttachEventHandlers()
     {
         Modal.KeyPressed += OnKeyPressed;
@@ -74,6 +131,7 @@ public abstract class DialogBase<TResult>
 
     private void OnModalClosed(object? sender, EventArgs e)
     {
+        RemoveDimOverlay();
         OnCleanup();
         _tcs.TrySetResult(Result ?? GetDefaultResult());
     }

@@ -3,14 +3,17 @@ using CXPost.Models;
 
 namespace CXPost.Services;
 
+/// <summary>
+/// Manages IMAP connections with two strategies:
+/// - Persistent: one sync + one idle connection per account (long-lived, lock-protected)
+/// - Ephemeral: created per user operation, caller owns and disposes (no locks needed)
+/// </summary>
 public class ImapConnectionFactory : IDisposable
 {
     private readonly ICredentialService _credentials;
     private readonly ConcurrentDictionary<string, ImapService> _syncConnections = new();
-    private readonly ConcurrentDictionary<string, ImapService> _fetchConnections = new();
     private readonly ConcurrentDictionary<string, ImapService> _idleConnections = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _syncLocks = new();
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _fetchLocks = new();
 
     public ImapConnectionFactory(ICredentialService credentials)
     {
@@ -19,106 +22,113 @@ public class ImapConnectionFactory : IDisposable
 
     public ICredentialService Credentials => _credentials;
 
-    /// <summary>Persistent sync connection (folder list, header fetch, periodic sync).</summary>
+    // ── Persistent connections (sync + idle only) ───────────────────────
+
     public ImapService GetSyncConnection(Account account)
-        => _syncConnections.GetOrAdd(account.Id, _ => new ImapService(_credentials));
+    {
+        var imap = _syncConnections.GetOrAdd(account.Id, _ =>
+        {
+            ImapLogger.Debug($"[{account.Name}] Creating persistent sync connection");
+            return new ImapService(_credentials);
+        });
+        return imap;
+    }
 
-    /// <summary>Persistent fetch connection (body, flags, attachments, search, move, delete).</summary>
-    public ImapService GetFetchConnection(Account account)
-        => _fetchConnections.GetOrAdd(account.Id, _ => new ImapService(_credentials));
-
-    /// <summary>Persistent IDLE connection (push notifications).</summary>
     public ImapService GetIdleConnection(Account account)
-        => _idleConnections.GetOrAdd(account.Id, _ => new ImapService(_credentials));
+    {
+        var imap = _idleConnections.GetOrAdd(account.Id, _ =>
+        {
+            ImapLogger.Debug($"[{account.Name}] Creating persistent IDLE connection");
+            return new ImapService(_credentials);
+        });
+        return imap;
+    }
 
     public SemaphoreSlim GetSyncLock(string accountId)
         => _syncLocks.GetOrAdd(accountId, _ => new SemaphoreSlim(1, 1));
 
-    public SemaphoreSlim GetFetchLock(string accountId)
-        => _fetchLocks.GetOrAdd(accountId, _ => new SemaphoreSlim(1, 1));
-
-    // Legacy compatibility — maps to sync connection
-    public ImapService GetConnection(Account account) => GetSyncConnection(account);
-    public SemaphoreSlim GetLock(string accountId) => GetSyncLock(accountId);
-
-    public bool HasAnyConnection =>
-        _syncConnections.Values.Any(c => c.IsConnected) ||
-        _fetchConnections.Values.Any(c => c.IsConnected) ||
-        _idleConnections.Values.Any(c => c.IsConnected);
-
-    /// <summary>Ensures a connection is connected, reconnecting if needed.</summary>
     public async Task EnsureConnectedAsync(ImapService imap, Account account, CancellationToken ct)
     {
         if (!imap.IsConnected)
+        {
+            ImapLogger.Debug($"[{account.Name}] Reconnecting persistent connection to {account.ImapHost}:{account.ImapPort}");
             await imap.ConnectAsync(account, ct);
+            ImapLogger.Debug($"[{account.Name}] Persistent connection established");
+        }
     }
 
-    /// <summary>
-    /// Gets the fetch connection, acquires the fetch lock, ensures connected, runs the operation,
-    /// and retries once with a fresh reconnect if the operation fails (and ct is not cancelled).
-    /// Releases the lock in finally.
-    /// </summary>
-    public async Task<T> WithFetchConnectionAsync<T>(Account account,
-        Func<ImapService, Task<T>> operation, CancellationToken ct)
+    // ── Ephemeral connections (user operations) ─────────────────────────
+
+    public async Task<ImapService> CreateConnectionAsync(Account account, CancellationToken ct)
     {
-        var imap = GetFetchConnection(account);
-        var fetchLock = GetFetchLock(account.Id);
-        await fetchLock.WaitAsync(ct);
+        var id = Guid.NewGuid().ToString()[..8];
+        ImapLogger.Debug($"[{account.Name}] Ephemeral({id}) connecting to {account.ImapHost}:{account.ImapPort}");
+        var imap = new ImapService(_credentials);
         try
         {
-            await EnsureConnectedAsync(imap, account, ct);
+            await imap.ConnectAsync(account, ct);
+            ImapLogger.Debug($"[{account.Name}] Ephemeral({id}) connected");
+        }
+        catch (Exception ex) when (ct.IsCancellationRequested)
+        {
+            // MailKit wraps TaskCanceledException inside SslHandshakeException
+            // when cancellation happens during SSL handshake
+            ImapLogger.Debug($"[{account.Name}] Ephemeral({id}) cancelled during connect");
+            imap.Dispose();
+            throw new OperationCanceledException(ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            ImapLogger.Warn($"[{account.Name}] Ephemeral({id}) connect failed: {ex.Message} — retrying in 1s");
+            imap.Dispose();
+            await Task.Delay(1000, ct);
+            imap = new ImapService(_credentials);
             try
             {
-                return await operation(imap);
-            }
-            catch (Exception) when (!ct.IsCancellationRequested)
-            {
-                try { await imap.DisconnectAsync(CancellationToken.None); } catch { }
                 await imap.ConnectAsync(account, ct);
-                return await operation(imap);
+                ImapLogger.Debug($"[{account.Name}] Ephemeral({id}) retry connected");
+            }
+            catch (Exception retryEx)
+            {
+                ImapLogger.Error($"[{account.Name}] Ephemeral({id}) retry also failed: {retryEx.Message}", retryEx);
+                imap.Dispose();
+                throw;
             }
         }
-        finally { fetchLock.Release(); }
+        return imap;
     }
 
-    /// <summary>
-    /// Gets the fetch connection, acquires the fetch lock, ensures connected, runs the operation,
-    /// and retries once with a fresh reconnect if the operation fails (and ct is not cancelled).
-    /// Releases the lock in finally.
-    /// </summary>
-    public async Task WithFetchConnectionAsync(Account account,
-        Func<ImapService, Task> operation, CancellationToken ct)
+    // ── Status ──────────────────────────────────────────────────────────
+
+    public bool HasAnyConnection =>
+        _syncConnections.Values.Any(c => c.IsConnected) ||
+        _idleConnections.Values.Any(c => c.IsConnected);
+
+    // ── Reset (after settings change) ───────────────────────────────────
+
+    public async Task ResetAllAsync(string accountId, CancellationToken ct = default)
     {
-        await WithFetchConnectionAsync<object?>(account, async imap =>
+        ImapLogger.Info($"Resetting all connections for account {accountId}");
+        if (_syncConnections.TryRemove(accountId, out var sync))
         {
-            await operation(imap);
-            return null;
-        }, ct);
-    }
-
-    public async Task ResetConnectionAsync(string accountId, CancellationToken ct = default)
-    {
-        await ResetOne(_syncConnections, accountId, ct);
-        await ResetOne(_fetchConnections, accountId, ct);
-        await ResetOne(_idleConnections, accountId, ct);
-    }
-
-    private static async Task ResetOne(ConcurrentDictionary<string, ImapService> dict, string accountId, CancellationToken ct)
-    {
-        if (dict.TryRemove(accountId, out var service))
+            try { await sync.DisconnectAsync(ct); } catch { }
+            sync.Dispose();
+        }
+        if (_idleConnections.TryRemove(accountId, out var idle))
         {
-            try { await service.DisconnectAsync(ct); }
-            catch { }
-            service.Dispose();
+            try { await idle.DisconnectAsync(ct); } catch { }
+            idle.Dispose();
         }
     }
+
+    // Legacy compatibility
+    public ImapService GetConnection(Account account) => GetSyncConnection(account);
+    public SemaphoreSlim GetLock(string accountId) => GetSyncLock(accountId);
 
     public void Dispose()
     {
         foreach (var c in _syncConnections.Values) c.Dispose();
-        foreach (var c in _fetchConnections.Values) c.Dispose();
         foreach (var c in _idleConnections.Values) c.Dispose();
         foreach (var s in _syncLocks.Values) s.Dispose();
-        foreach (var s in _fetchLocks.Values) s.Dispose();
     }
 }

@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
 using CXPost.Models;
@@ -125,6 +126,11 @@ public static class AccountDashboard
                 .Build());
         }
 
+        // ── Activity sparkline ──────────────────────────────────────────
+        var allMessages = accounts.SelectMany(a => cache.GetFolders(a.Id))
+            .SelectMany(f => cache.GetMessages(f.Id)).ToList();
+        AddActivitySparkline(controls, allMessages, "Activity (14 days)");
+
         // ── Per-account breakdown ───────────────────────────────────────
         controls.Add(Controls.RuleBuilder()
             .WithTitle("[grey93]Accounts[/]")
@@ -239,6 +245,10 @@ public static class AccountDashboard
             .WithMargin(2, 0, 2, 1)
             .Build());
 
+        // ── Activity sparkline ──────────────────────────────────────────
+        var allMessages = folders.SelectMany(f => cache.GetMessages(f.Id)).ToList();
+        AddActivitySparkline(controls, allMessages, "Activity (14 days)");
+
         // ── Folders with bar graphs ─────────────────────────────────────
         controls.Add(Controls.RuleBuilder()
             .WithTitle("[grey93]Folders[/]")
@@ -313,6 +323,45 @@ public static class AccountDashboard
             .Build());
 
         return controls;
+    }
+
+    private static void AddActivitySparkline(List<IWindowControl> controls, List<MailMessage> messages, string title)
+    {
+        const int days = 14;
+        var today = DateTime.Today;
+        var dailyCounts = new double[days];
+
+        foreach (var msg in messages)
+        {
+            var age = (today - msg.Date.Date).Days;
+            if (age >= 0 && age < days)
+                dailyCounts[days - 1 - age]++;
+        }
+
+        // Only show if there's any activity
+        if (dailyCounts.Any(c => c > 0))
+        {
+            controls.Add(Controls.RuleBuilder()
+                .WithTitle($"[grey93]{title}[/]")
+                .WithColor(Color.Grey23)
+                .WithMargin(2, 1, 2, 0)
+                .Build());
+
+            var sparkline = Controls.Sparkline()
+                .WithHeight(3)
+                .WithData(dailyCounts)
+                .WithGradient(ColorGradient.FromColors(new Color(50, 80, 140), new Color(80, 200, 255)))
+                .WithBackgroundColor(Color.Transparent)
+                .WithBaseline(true, '┈', Color.Grey23)
+                .WithTitle($"[grey35]{today.AddDays(-(days - 1)):MMM d} \u2192 {today:MMM d}[/]")
+                .WithTitlePosition(TitlePosition.Bottom)
+                .WithInlineTitleBaseline()
+                .WithAutoFitDataPoints()
+                .WithAlignment(HorizontalAlignment.Stretch)
+                .WithMargin(2, 0, 2, 0)
+                .Build();
+            controls.Add(sparkline);
+        }
     }
 
     private static string GetFolderIcon(string folderName) => MessageFormatter.GetFolderIcon(folderName);
