@@ -6,14 +6,13 @@ using System.Text;
 namespace CXPost.Services;
 
 /// <summary>
-/// Cross-platform credential storage with fallback:
+/// Cross-platform credential storage:
 /// - Linux: secret-tool (libsecret), falls back to encrypted file
 /// - macOS: security (Keychain)
-/// - Windows: cmdkey / credential manager via PowerShell
+/// - Windows: AES-256 encrypted file (machine-scoped key)
 ///
 /// When the primary OS keyring is unavailable, credentials are stored
-/// as base64-encoded encrypted files in the data directory. A warning
-/// is logged on first fallback use.
+/// as base64-encoded encrypted files in the data directory.
 /// </summary>
 public class CredentialService : ICredentialService
 {
@@ -54,7 +53,7 @@ public class CredentialService : ICredentialService
                 return RunProcess("security", $"find-generic-password -s {ServiceName} -a {accountId} -w");
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return RunProcess("powershell", $"-Command \"(Get-StoredCredential -Target '{ServiceName}:{accountId}').GetNetworkCredential().Password\"");
+                return GetPasswordFromFile(accountId);
         }
         catch (Exception ex)
         {
@@ -85,14 +84,17 @@ public class CredentialService : ICredentialService
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 RunProcessSafe("security", ["add-generic-password", "-U", "-s", ServiceName, "-a", accountId, "-w", password]);
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                RunProcessSafe("cmdkey", [$"/generic:{ServiceName}:{accountId}", $"/user:{accountId}", $"/pass:{password}"]);
+            {
+                StorePasswordToFile(accountId, password);
+                return;
+            }
         }
         catch (Exception ex)
         {
             Log($"StorePassword failed for account '{accountId}': {ex.Message}");
 
-            // Last-resort fallback on Linux
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            // Last-resort fallback on Linux/Windows
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 try
                 {
@@ -122,7 +124,7 @@ public class CredentialService : ICredentialService
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 RunProcess("security", $"delete-generic-password -s {ServiceName} -a {accountId}");
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                RunProcess("cmdkey", $"/delete:{ServiceName}:{accountId}");
+                DeletePasswordFile(accountId);
         }
         catch (Exception ex)
         {
@@ -130,7 +132,7 @@ public class CredentialService : ICredentialService
         }
     }
 
-    // ── File-based fallback (Linux) ──────────────────────────────────────────
+    // ── File-based encrypted storage (Linux fallback, Windows primary) ────────
 
     private string GetCredentialFilePath(string accountId)
     {
