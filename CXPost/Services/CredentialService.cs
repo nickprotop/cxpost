@@ -71,12 +71,18 @@ public class CredentialService : ICredentialService
             {
                 if (IsSecretToolAvailable())
                 {
-                    RunProcessWithInput("secret-tool", $"store --label=CXPost service {ServiceName} account {accountId}", password);
-                    Log($"Password stored via secret-tool for account '{accountId}'");
-                    return;
+                    if (RunProcessWithInput("secret-tool", $"store --label=CXPost service {ServiceName} account {accountId}", password))
+                    {
+                        Log($"Password stored via secret-tool for account '{accountId}'");
+                        return;
+                    }
+                    Log("secret-tool store failed (keyring service may not be running); falling back to encrypted file");
+                }
+                else
+                {
+                    Log("secret-tool unavailable; storing password in encrypted file fallback");
                 }
 
-                Log("secret-tool unavailable; storing password in encrypted file fallback");
                 StorePasswordToFile(accountId, password);
                 return;
             }
@@ -318,7 +324,7 @@ public class CredentialService : ICredentialService
         }
     }
 
-    private static void RunProcessWithInput(string fileName, string arguments, string input)
+    private static bool RunProcessWithInput(string fileName, string arguments, string input)
     {
         try
         {
@@ -331,18 +337,24 @@ public class CredentialService : ICredentialService
                 CreateNoWindow = true
             };
             using var process = Process.Start(psi);
-            if (process == null) return;
+            if (process == null) return false;
             process.StandardInput.Write(input);
             process.StandardInput.Close();
             var error = process.StandardError.ReadToEnd().Trim();
             process.WaitForExit(5000);
 
-            if (process.ExitCode != 0 && !string.IsNullOrEmpty(error))
-                System.Diagnostics.Trace.WriteLine($"[CXPost.CredentialService] {fileName} stderr: {error}");
+            if (process.ExitCode != 0)
+            {
+                if (!string.IsNullOrEmpty(error))
+                    System.Diagnostics.Trace.WriteLine($"[CXPost.CredentialService] {fileName} stderr: {error}");
+                return false;
+            }
+            return true;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Trace.WriteLine($"[CXPost.CredentialService] Failed to run {fileName}: {ex.Message}");
+            return false;
         }
     }
 
