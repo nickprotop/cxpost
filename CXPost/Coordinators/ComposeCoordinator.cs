@@ -84,7 +84,7 @@ public class ComposeCoordinator
                 var mimeType = MimeTypes.GetMimeType(path);
                 var attachment = new MimePart(mimeType)
                 {
-                    Content = new MimeContent(File.OpenRead(path)),
+                    Content = new MimeContent(File.OpenRead(path), ContentEncoding.Default),
                     ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
                     ContentTransferEncoding = ContentEncoding.Base64,
                     FileName = Path.GetFileName(path)
@@ -98,11 +98,31 @@ public class ComposeCoordinator
             message.Body = new TextPart("plain") { Text = bodyWithSig };
         }
 
-        // Send via SMTP (connect-send-disconnect to avoid stale connections)
-        if (!_smtp.IsConnected)
-            await _smtp.ConnectAsync(account, ct);
-        await _smtp.SendAsync(message, ct);
-        await _smtp.DisconnectAsync(ct);
+        // Send via SMTP — always fresh connection to avoid stale state
+        try
+        {
+            if (_smtp.IsConnected)
+                await _smtp.DisconnectAsync(ct);
+        }
+        catch { /* ignore disconnect errors */ }
+
+        await _smtp.ConnectAsync(account, ct);
+        try
+        {
+            await _smtp.SendAsync(message, ct);
+        }
+        finally
+        {
+            try { await _smtp.DisconnectAsync(ct); }
+            catch { /* best effort */ }
+
+            // Dispose attachment streams
+            if (message.Body is Multipart mp)
+            {
+                foreach (var part in mp.OfType<MimePart>())
+                    part.Content?.Stream?.Dispose();
+            }
+        }
 
         // Copy to Sent folder
         var folders = _cache.GetFolders(account.Id);
@@ -113,9 +133,15 @@ public class ComposeCoordinator
 
         if (sent != null)
         {
-            using var imap = new ImapService(_imapFactory.Credentials);
-            await imap.ConnectAsync(account, ct);
-            await imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, ct);
+            var imap = _imapFactory.GetFetchConnection(account);
+            var fetchLock = _imapFactory.GetFetchLock(account.Id);
+            await fetchLock.WaitAsync(ct);
+            try
+            {
+                await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
+                await imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, CancellationToken.None);
+            }
+            finally { fetchLock.Release(); }
         }
 
         // Record contacts

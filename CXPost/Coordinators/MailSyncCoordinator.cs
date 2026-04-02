@@ -15,6 +15,7 @@ public class MailSyncCoordinator
     private readonly NotificationCoordinator _notifications;
     private readonly ConcurrentDictionary<string, bool> _syncingAccounts = new();
     private readonly ConcurrentDictionary<int, bool> _syncingFolderIds = new();
+    private readonly ConcurrentDictionary<string, bool> _fetchingBodies = new();
 
     /// <summary>
     /// Set of folder IDs currently being synced — used by UI for sync animation.
@@ -56,8 +57,21 @@ public class MailSyncCoordinator
             await imapLock.WaitAsync(ct);
             try
             {
+                // Connect with retry — sync connection may have been dropped by server
                 if (!imap.IsConnected)
-                    await imap.ConnectAsync(account, ct);
+                {
+                    try
+                    {
+                        await imap.ConnectAsync(account, ct);
+                    }
+                    catch when (!ct.IsCancellationRequested)
+                    {
+                        // First attempt failed — wait briefly and retry once
+                        await Task.Delay(2000, ct);
+                        try { await imap.DisconnectAsync(CancellationToken.None); } catch { }
+                        await imap.ConnectAsync(account, ct);
+                    }
+                }
 
                 _app.Value.EnqueueUiAction(() =>
                     _app.Value.ReplaceMessage(syncMsgId,
@@ -118,12 +132,17 @@ public class MailSyncCoordinator
                     _notifications.NotifySyncComplete(account.Name, totalMessages);
             });
         }
+        catch (OperationCanceledException)
+        {
+            _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(syncMsgId));
+        }
         catch (Exception ex)
         {
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
-                _notifications.NotifyError("Sync Failed", $"{account.Name}: {ex.Message}");
+                // Show as warning, not error — sync will retry automatically
+                _app.Value.ShowWarning($"{account.Name}: Sync retry — {ex.Message}");
             });
         }
         finally
@@ -157,6 +176,9 @@ public class MailSyncCoordinator
             var headers = await imap.FetchHeadersAsync(folder.Path, minUid, ct);
             var newHeaders = headers.Where(h => newUids.Contains(h.Uid)).ToList();
 
+            foreach (var h in newHeaders)
+                h.AccountId = account.Id;
+
             var allMessages = _cache.GetMessages(folder.Id);
             allMessages.AddRange(newHeaders);
             _threading.AssignThreadIds(allMessages);
@@ -171,55 +193,94 @@ public class MailSyncCoordinator
         if (message.BodyFetched && (message.Attachments != null || !message.HasAttachments))
             return;
 
-        var account = _configService.Load().Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
-        if (account == null) return;
-        var imap = _imapFactory.GetConnection(account);
-        var (body, attachments) = await imap.FetchBodyAsync(folder.Path, message.Uid, ct);
+        var key = $"{folder.Id}:{message.Uid}";
+        if (!_fetchingBodies.TryAdd(key, true))
+            return; // Another fetch in progress for this message
 
-        if (!message.BodyFetched && body != null)
+        try
         {
-            _cache.StoreBody(folder.Id, message.Uid, body);
-            message.BodyPlain = body;
-            message.BodyFetched = true;
-        }
+            var account = _configService.Load().Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
+            if (account == null) return;
 
-        message.Attachments = attachments.Count > 0 ? attachments : null;
+            var imap = _imapFactory.GetFetchConnection(account);
+            var fetchLock = _imapFactory.GetFetchLock(account.Id);
+            await fetchLock.WaitAsync(ct);
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                await _imapFactory.EnsureConnectedAsync(imap, account, CancellationToken.None);
+                ct.ThrowIfCancellationRequested();
+                // Use CancellationToken.None for the actual IMAP operation —
+                // cancelling mid-operation corrupts the persistent connection.
+                // We check ct between steps instead.
+                var (body, attachments) = await imap.FetchBodyAsync(folder.Path, message.Uid, CancellationToken.None);
+
+                if (!message.BodyFetched && body != null)
+                {
+                    var attachmentList = attachments.Count > 0 ? attachments : null;
+                    _cache.StoreBody(folder.Id, message.Uid, body, attachmentList);
+                    message.BodyPlain = body;
+                    message.BodyFetched = true;
+                    message.Attachments = attachmentList;
+                }
+                else if (message.Attachments == null && attachments.Count > 0)
+                {
+                    message.Attachments = attachments;
+                }
+            }
+            finally
+            {
+                fetchLock.Release();
+            }
+        }
+        finally
+        {
+            _fetchingBodies.TryRemove(key, out _);
+        }
     }
 
     public async Task StartIdleAsync(Account account, string folderPath, CancellationToken ct)
     {
-        // IDLE needs a dedicated connection — not shared with sync
-        var idleImap = new ImapService(_imapFactory.Credentials);
+        // IDLE uses a dedicated factory-managed connection
+        var idleImap = _imapFactory.GetIdleConnection(account);
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                if (!idleImap.IsConnected)
-                    await idleImap.ConnectAsync(account, ct);
+                await _imapFactory.EnsureConnectedAsync(idleImap, account, ct);
 
-                await idleImap.IdleAsync(folderPath, () =>
+                var debounceTimer = new System.Threading.Timer(_ =>
                 {
                     var folder = _cache.GetFolders(account.Id).FirstOrDefault(f => f.Path == folderPath);
                     if (folder != null)
                     {
                         _ = Task.Run(async () =>
                         {
-                            var imap = _imapFactory.GetConnection(account);
-                            var imapLock = _imapFactory.GetLock(account.Id);
-                            await imapLock.WaitAsync(ct);
+                            var syncImap = _imapFactory.GetSyncConnection(account);
+                            var syncLock = _imapFactory.GetSyncLock(account.Id);
+                            if (!syncLock.Wait(0)) return; // skip if sync already running
                             try
                             {
-                                if (!imap.IsConnected)
-                                    await imap.ConnectAsync(account, ct);
-                                await SyncFolderAsync(account, folder, imap, ct);
+                                await _imapFactory.EnsureConnectedAsync(syncImap, account, ct);
+                                await SyncFolderAsync(account, folder, syncImap, ct);
+                                _app.Value.EnqueueUiAction(() =>
+                                {
+                                    _app.Value.RefreshFolderTree();
+                                    _app.Value.RefreshCurrentMessageListIfFolder(folder.Id);
+                                });
                             }
-                            finally
-                            {
-                                imapLock.Release();
-                            }
+                            catch (OperationCanceledException) { }
+                            catch { /* IDLE sync failure — will retry on next event */ }
+                            finally { syncLock.Release(); }
                         }, ct);
                     }
+                }, null, Timeout.Infinite, Timeout.Infinite);
+
+                await idleImap.IdleAsync(folderPath, () =>
+                {
+                    // Debounce: reset timer to 2 seconds — coalesces burst of events
+                    debounceTimer.Change(2000, Timeout.Infinite);
                 }, ct);
             }
             catch (OperationCanceledException) { break; }
@@ -228,7 +289,5 @@ public class MailSyncCoordinator
                 await Task.Delay(TimeSpan.FromSeconds(5), ct);
             }
         }
-
-        idleImap.Dispose();
     }
 }

@@ -10,7 +10,7 @@ public interface ICacheService
     List<MailMessage> GetMessages(int folderId);
     HashSet<uint> GetCachedUids(int folderId);
     string? GetBody(int folderId, uint uid);
-    void StoreBody(int folderId, uint uid, string body);
+    void StoreBody(int folderId, uint uid, string body, List<AttachmentInfo>? attachments = null);
     void UpdateFlags(int folderId, uint uid, bool isRead, bool isFlagged);
     void DeleteMessage(int folderId, uint uid);
     void RestoreMessage(int folderId, MailMessage message);

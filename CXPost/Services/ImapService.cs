@@ -23,6 +23,20 @@ public class ImapService : IImapService, IDisposable
     public async Task ConnectAsync(Account account, CancellationToken ct = default)
     {
         _account = account;
+
+        // Cleanly close existing client before creating a new one
+        if (_client != null)
+        {
+            try
+            {
+                if (_client.IsConnected)
+                    await _client.DisconnectAsync(true, CancellationToken.None);
+            }
+            catch { }
+            _client.Dispose();
+            _client = null;
+        }
+
         _client = new ImapClient();
 
         var socketOptions = account.ImapSecurity switch
@@ -125,55 +139,46 @@ public class ImapService : IImapService, IDisposable
         return messages;
     }
 
-    public async Task<(string? body, List<Models.AttachmentInfo> attachments)> FetchBodyAsync(string folderPath, uint uid, CancellationToken ct = default)
+    public async Task<(string? body, List<Models.AttachmentInfo> attachments)> FetchBodyAsync(
+        string folderPath, uint uid, CancellationToken ct = default)
     {
-        // Use a separate connection for body fetch to avoid conflicting
-        // with the main connection (which may be in IDLE or syncing)
-        if (_account == null)
-            throw new InvalidOperationException("No account configured. Call ConnectAsync first.");
+        EnsureConnected();
 
-        using var client = new ImapClient();
-        var socketOptions = _account.ImapSecurity switch
-        {
-            SecurityType.Ssl => SecureSocketOptions.SslOnConnect,
-            SecurityType.StartTls => SecureSocketOptions.StartTls,
-            _ => SecureSocketOptions.None
-        };
-        await client.ConnectAsync(_account.ImapHost, _account.ImapPort, socketOptions, ct);
-
-        var password = _credentials.GetPassword(_account.Id) ?? string.Empty;
-        await client.AuthenticateAsync(
-            _account.Username.Length > 0 ? _account.Username : _account.Email,
-            password, ct);
-
-        var folder = await client.GetFolderAsync(folderPath, ct);
+        var folder = await _client!.GetFolderAsync(folderPath, ct);
         await folder.OpenAsync(FolderAccess.ReadOnly, ct);
 
-        var message = await folder.GetMessageAsync(new UniqueId(uid), ct);
-        await folder.CloseAsync(false, ct);
-        await client.DisconnectAsync(true, ct);
-
-        var attachments = new List<Models.AttachmentInfo>();
-        var attachIndex = 0;
-        foreach (var attachment in message.Attachments)
+        try
         {
-            var fileName = attachment is MimePart mp ? mp.FileName : null;
-            long size = 0;
-            if (attachment is MimePart mp2 && mp2.Content?.Stream != null)
-            {
-                try { size = mp2.Content.Stream.Length; } catch { }
-            }
-            attachments.Add(new Models.AttachmentInfo
-            {
-                FileName = fileName ?? $"attachment_{attachIndex}",
-                Size = size,
-                MimeType = attachment.ContentType?.MimeType ?? "application/octet-stream",
-                Index = attachIndex
-            });
-            attachIndex++;
-        }
+            var message = await folder.GetMessageAsync(new UniqueId(uid), ct);
 
-        return (message.HtmlBody ?? message.TextBody, attachments);
+            var attachments = new List<Models.AttachmentInfo>();
+            var attachIndex = 0;
+            foreach (var attachment in message.Attachments)
+            {
+                var fileName = attachment is MimePart mp ? mp.FileName : null;
+                long size = 0;
+                if (attachment is MimePart mp2 && mp2.Content?.Stream != null)
+                {
+                    try { size = mp2.Content.Stream.Length; } catch { }
+                }
+                attachments.Add(new Models.AttachmentInfo
+                {
+                    FileName = fileName ?? $"attachment_{attachIndex}",
+                    Size = size,
+                    MimeType = attachment.ContentType?.MimeType ?? "application/octet-stream",
+                    Index = attachIndex
+                });
+                attachIndex++;
+            }
+
+            return (message.HtmlBody ?? message.TextBody, attachments);
+        }
+        finally
+        {
+            // Don't close the folder — MailKit auto-closes when another folder is opened.
+            // Explicit close on a persistent connection can trigger server BYE responses
+            // that mark the connection as disconnected.
+        }
     }
 
     public async Task SetFlagsAsync(string folderPath, uint uid, bool? isRead = null, bool? isFlagged = null, CancellationToken ct = default)
@@ -324,44 +329,34 @@ public class ImapService : IImapService, IDisposable
     public async Task SaveAttachmentAsync(string folderPath, uint uid, int attachmentIndex,
         string targetPath, CancellationToken ct = default)
     {
-        if (_account == null)
-            throw new InvalidOperationException("No account configured. Call ConnectAsync first.");
+        EnsureConnected();
 
-        using var client = new ImapClient();
-        var socketOptions = _account.ImapSecurity switch
-        {
-            SecurityType.Ssl => SecureSocketOptions.SslOnConnect,
-            SecurityType.StartTls => SecureSocketOptions.StartTls,
-            _ => SecureSocketOptions.None
-        };
-        await client.ConnectAsync(_account.ImapHost, _account.ImapPort, socketOptions, ct);
-
-        var password = _credentials.GetPassword(_account.Id) ?? string.Empty;
-        await client.AuthenticateAsync(
-            _account.Username.Length > 0 ? _account.Username : _account.Email,
-            password, ct);
-
-        var folder = await client.GetFolderAsync(folderPath, ct);
+        var folder = await _client!.GetFolderAsync(folderPath, ct);
         await folder.OpenAsync(FolderAccess.ReadOnly, ct);
 
-        var message = await folder.GetMessageAsync(new UniqueId(uid), ct);
-        await folder.CloseAsync(false, ct);
-        await client.DisconnectAsync(true, ct);
-
-        var attachments = message.Attachments.ToList();
-        if (attachmentIndex < 0 || attachmentIndex >= attachments.Count)
-            throw new ArgumentOutOfRangeException(nameof(attachmentIndex));
-
-        var attachment = attachments[attachmentIndex];
-        if (attachment is MimePart part)
+        try
         {
-            var finalPath = GetUniqueFilePath(targetPath);
-            var dir = Path.GetDirectoryName(finalPath);
-            if (dir != null && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
+            var message = await folder.GetMessageAsync(new UniqueId(uid), ct);
 
-            using var stream = File.Create(finalPath);
-            await part.Content.DecodeToAsync(stream, ct);
+            var attachments = message.Attachments.ToList();
+            if (attachmentIndex < 0 || attachmentIndex >= attachments.Count)
+                throw new ArgumentOutOfRangeException(nameof(attachmentIndex));
+
+            var attachment = attachments[attachmentIndex];
+            if (attachment is MimePart part)
+            {
+                var finalPath = GetUniqueFilePath(targetPath);
+                var dir = Path.GetDirectoryName(finalPath);
+                if (dir != null && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                using var stream = File.Create(finalPath);
+                await part.Content.DecodeToAsync(stream, ct);
+            }
+        }
+        finally
+        {
+            // Don't close — persistent connection, MailKit auto-closes on next folder open
         }
     }
 
@@ -389,6 +384,11 @@ public class ImapService : IImapService, IDisposable
 
     public void Dispose()
     {
+        if (_client is { IsConnected: true })
+        {
+            try { _client.Disconnect(true); }
+            catch { /* best effort */ }
+        }
         _client?.Dispose();
     }
 }

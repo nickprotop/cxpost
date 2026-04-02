@@ -237,7 +237,9 @@ public class MessageBar
             };
 
             var suffix = msg.Dismissable ? $" [{ColorScheme.MutedMarkup}](click to dismiss)[/]" : "";
-            lines.Add($"{icon} [{textColor}]{msg.Text}[/]{suffix}");
+            // Show only first line to prevent multiline blowup
+            var displayText = msg.Text.Split('\n')[0].Trim();
+            lines.Add($"{icon} [{textColor}]{displayText}[/]{suffix}");
         }
 
         _control.SetContent(lines);

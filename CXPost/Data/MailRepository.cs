@@ -100,7 +100,7 @@ public class MailRepository
         cmd.CommandText = """
             SELECT id, folder_id, uid, message_id, in_reply_to, "references", thread_id,
                 from_name, from_address, to_addresses, cc_addresses, subject, date,
-                is_read, is_flagged, has_attachments, body_plain, body_fetched
+                is_read, is_flagged, has_attachments, body_plain, body_fetched, attachments_json
             FROM messages WHERE folder_id = @folderId ORDER BY date DESC
             """;
         cmd.Parameters.AddWithValue("@folderId", folderId);
@@ -143,11 +143,12 @@ public class MailRepository
         return cmd.ExecuteScalar() as string;
     }
 
-    public void StoreMessageBody(int folderId, uint uid, string body)
+    public void StoreMessageBody(int folderId, uint uid, string body, string? attachmentsJson = null)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "UPDATE messages SET body_plain = @body, body_fetched = 1 WHERE folder_id = @folderId AND uid = @uid";
+        cmd.CommandText = "UPDATE messages SET body_plain = @body, body_fetched = 1, attachments_json = @attachments WHERE folder_id = @folderId AND uid = @uid";
         cmd.Parameters.AddWithValue("@body", body);
+        cmd.Parameters.AddWithValue("@attachments", (object?)attachmentsJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@folderId", folderId);
         cmd.Parameters.AddWithValue("@uid", (long)uid);
         cmd.ExecuteNonQuery();
@@ -176,6 +177,17 @@ public class MailRepository
 
     private static MailMessage ReadMessage(SqliteDataReader reader)
     {
+        List<Models.AttachmentInfo>? attachments = null;
+        // Column 18 = attachments_json (may not exist in older DBs)
+        if (reader.FieldCount > 18 && !reader.IsDBNull(18))
+        {
+            try
+            {
+                attachments = System.Text.Json.JsonSerializer.Deserialize<List<Models.AttachmentInfo>>(reader.GetString(18));
+            }
+            catch { /* malformed json — ignore */ }
+        }
+
         return new MailMessage
         {
             Id = reader.GetInt32(0),
@@ -195,7 +207,8 @@ public class MailRepository
             IsFlagged = reader.GetInt32(14) != 0,
             HasAttachments = reader.GetInt32(15) != 0,
             BodyPlain = reader.IsDBNull(16) ? null : reader.GetString(16),
-            BodyFetched = reader.GetInt32(17) != 0
+            BodyFetched = reader.GetInt32(17) != 0,
+            Attachments = attachments
         };
     }
 }

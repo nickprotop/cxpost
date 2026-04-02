@@ -15,6 +15,7 @@ public record ComposeResult(string To, string? Cc, string Subject, string Body, 
 public class ComposeDialog : DialogBase<ComposeResult?>
 {
     private readonly IContactsService _contacts;
+    private readonly string _fromDisplay;
     private readonly string _initialTo;
     private readonly string _initialCc;
     private readonly string _initialSubject;
@@ -26,16 +27,19 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     private MultilineEditControl? _bodyEditor;
 
     private readonly List<string> _attachmentPaths = [];
+    private readonly object _attachmentLock = new();
     private ScrollablePanelControl? _attachmentPanel;
 
     public ComposeDialog(
         IContactsService contacts,
+        string fromDisplay = "",  // "Account Name <email@example.com>"
         string to = "",
         string cc = "",
         string subject = "",
         string body = "")
     {
         _contacts = contacts;
+        _fromDisplay = fromDisplay;
         _initialTo = to;
         _initialCc = cc;
         _initialSubject = subject;
@@ -57,6 +61,15 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 
         Modal.AddControl(Controls.RuleBuilder().WithColor(Color.Grey23)
             .WithMargin(2, 1, 2, 0).Build());
+
+        // From display (read-only — account is determined by context)
+        if (!string.IsNullOrEmpty(_fromDisplay))
+        {
+            var fromLabel = Controls.Markup($"[grey70]From:[/]     [white]{MarkupParser.Escape(_fromDisplay)}[/]")
+                .WithMargin(2, 0, 2, 0)
+                .Build();
+            Modal.AddControl(fromLabel);
+        }
 
         // ── Address fields (inline prompts) ─────────────────────────────
         _toField = new PromptControl { Prompt = "[grey70]To:[/]      ", Input = _initialTo };
@@ -103,7 +116,7 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         var sendButton = Controls.Button("[grey93]Send [cyan1](S)[/][/]")
             .WithBackgroundColor(Color.Transparent)
             .WithFocusedBackgroundColor(Color.DarkGreen)
-            .OnClick((s, e) => { if (!IsEditing()) TrySend(); })
+            .OnClick((s, e) => TrySend())
             .Build();
 
         var attachButton = Controls.Button("[grey93]Attach [cyan1](F2)[/][/]")
@@ -192,7 +205,10 @@ public class ComposeDialog : DialogBase<ComposeResult?>
             var path = await SharpConsoleUI.Dialogs.FileDialogs.ShowFilePickerAsync(WindowSystem, parentWindow: Modal);
             if (path != null && File.Exists(path))
             {
-                _attachmentPaths.Add(path);
+                lock (_attachmentLock)
+                {
+                    _attachmentPaths.Add(path);
+                }
                 RefreshAttachmentUI();
             }
         });
@@ -200,16 +216,22 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 
     private void RemoveAttachment(int index)
     {
-        if (index >= 0 && index < _attachmentPaths.Count)
+        lock (_attachmentLock)
         {
-            _attachmentPaths.RemoveAt(index);
-            RefreshAttachmentUI();
+            if (index >= 0 && index < _attachmentPaths.Count)
+                _attachmentPaths.RemoveAt(index);
+            else
+                return;
         }
+        RefreshAttachmentUI();
     }
 
     private void RemoveAllAttachments()
     {
-        _attachmentPaths.Clear();
+        lock (_attachmentLock)
+        {
+            _attachmentPaths.Clear();
+        }
         RefreshAttachmentUI();
     }
 

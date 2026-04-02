@@ -4,6 +4,7 @@ public class MailMessage
 {
     public int Id { get; set; }
     public int FolderId { get; set; }
+    public string? AccountId { get; set; }
     public uint Uid { get; set; }
     public string? MessageId { get; set; }
     public string? InReplyTo { get; set; }

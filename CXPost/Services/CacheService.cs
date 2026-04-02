@@ -38,7 +38,13 @@ public class CacheService : ICacheService
 
     public string? GetBody(int folderId, uint uid) => _repo.GetMessageBody(folderId, uid);
 
-    public void StoreBody(int folderId, uint uid, string body) => _repo.StoreMessageBody(folderId, uid, body);
+    public void StoreBody(int folderId, uint uid, string body, List<AttachmentInfo>? attachments = null)
+    {
+        string? attachmentsJson = attachments != null
+            ? System.Text.Json.JsonSerializer.Serialize(attachments)
+            : null;
+        _repo.StoreMessageBody(folderId, uid, body, attachmentsJson);
+    }
 
     public void UpdateFlags(int folderId, uint uid, bool isRead, bool isFlagged)
         => _repo.UpdateMessageFlags(folderId, uid, isRead, isFlagged);

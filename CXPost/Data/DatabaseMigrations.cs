@@ -46,6 +46,14 @@ public static class DatabaseMigrations
             CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_address);
             """;
         cmd.ExecuteNonQuery();
+
+        // Migration: add attachments_json column if missing
+        using var migrate = connection.CreateCommand();
+        migrate.CommandText = """
+            ALTER TABLE messages ADD COLUMN attachments_json TEXT;
+            """;
+        try { migrate.ExecuteNonQuery(); }
+        catch { /* column already exists */ }
     }
 
     public static void ApplyContacts(SqliteConnection connection)
