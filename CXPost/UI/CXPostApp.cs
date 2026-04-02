@@ -311,7 +311,7 @@ public class CXPostApp : IDisposable
 
         // Show "All Accounts" dashboard on startup
         ShowDashboardView(
-            Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
+            Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService, GetDashboardActions()));
         _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
         SetRightPanelHeader("[grey70]Dashboard[/]");
 
@@ -949,7 +949,7 @@ public class CXPostApp : IDisposable
             if (account != null)
             {
                 ShowDashboardView(
-                    Components.AccountDashboard.BuildAccountDashboard(account, _cacheService));
+                    Components.AccountDashboard.BuildAccountDashboard(account, _cacheService, GetDashboardActions()));
 
                 _statusBar.UpdateBreadcrumb(account.Name, "Dashboard",
                     onAppClick: NavigateToAllAccounts);
@@ -963,7 +963,7 @@ public class CXPostApp : IDisposable
             _isAggregatedView = false;
             _aggregatedFolderIds = null;
             ShowDashboardView(
-                Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
+                Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService, GetDashboardActions()));
 
             _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard",
                 onAppClick: NavigateToAllAccounts);
@@ -1110,6 +1110,47 @@ public class CXPostApp : IDisposable
         }
     }
 
+    private Components.DashboardActions GetDashboardActions() => new(
+        OnCompose: () => SimulateKey(ConsoleKey.N, ctrl: true),
+        OnSearch: () => SimulateKey(ConsoleKey.S, ctrl: true),
+        OnSync: () => SimulateKey(ConsoleKey.F5),
+        OnSettings: () => SimulateKey(ConsoleKey.OemComma, ctrl: true),
+        OnAccountClick: accountId => NavigateToAccount(accountId),
+        OnFolderClick: folderId => NavigateToFolder(folderId)
+    );
+
+    private void NavigateToFolder(int folderId)
+    {
+        var folder = FindFolderById(folderId);
+        if (folder == null) return;
+
+        // Find and select the folder node in tree
+        var folderNode = _folderTree?.FindNodeByTag(new FolderTag(folderId));
+        if (folderNode != null && _folderTree != null)
+            _folderTree.SelectNode(folderNode);
+
+        // Show messages (same as OnFolderSelected for FolderTag)
+        _isSearchActive = false;
+        _activeSearchQuery = null;
+        _isAggregatedView = false;
+        ShowMessageListView();
+        _messageListCoordinator.SelectFolder(folder);
+
+        var messages = _cacheService.GetMessages(folder.Id);
+        foreach (var m in messages)
+            m.AccountId ??= folder.AccountId;
+        PopulateMessageList(messages);
+
+        var account = _config.Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
+        _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName,
+            onAppClick: NavigateToAllAccounts,
+            onAccountClick: account != null ? () => NavigateToAccount(account.Id) : null);
+        SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]");
+        ClearReadingPane();
+        UpdateHelpBar();
+        UpdateToolbar();
+    }
+
     private void NavigateToAllAccounts()
     {
         _isSearchActive = false;
@@ -1123,7 +1164,7 @@ public class CXPostApp : IDisposable
 
         // Always show the dashboard (SelectNode may not fire event if already selected)
         ShowDashboardView(
-            Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
+            Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService, GetDashboardActions()));
         _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
         SetRightPanelHeader("[grey70]Dashboard[/]");
         UpdateHelpBar();
@@ -1146,7 +1187,7 @@ public class CXPostApp : IDisposable
 
         // Always show the dashboard
         ShowDashboardView(
-            Components.AccountDashboard.BuildAccountDashboard(account, _cacheService));
+            Components.AccountDashboard.BuildAccountDashboard(account, _cacheService, GetDashboardActions()));
         _statusBar.UpdateBreadcrumb(account.Name, "Dashboard", onAppClick: NavigateToAllAccounts);
         SetRightPanelHeader("[grey70]Account Dashboard[/]");
         UpdateHelpBar();

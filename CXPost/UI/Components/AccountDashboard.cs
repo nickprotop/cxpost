@@ -10,13 +10,25 @@ using CXPost.Services;
 namespace CXPost.UI.Components;
 
 /// <summary>
+/// Dashboard interaction callbacks.
+/// </summary>
+public record DashboardActions(
+    Action? OnCompose = null,
+    Action? OnSearch = null,
+    Action? OnSync = null,
+    Action? OnSettings = null,
+    Action<string>? OnAccountClick = null,      // accountId
+    Action<int>? OnFolderClick = null            // folderId
+);
+
+/// <summary>
 /// Builds rich dashboard views using proper ConsoleEx controls:
 /// TableControl, BarGraphControl, ProgressBarControl, RuleControl.
 /// </summary>
 public static class AccountDashboard
 {
     public static List<IWindowControl> BuildAllAccountsDashboard(
-        List<Account> accounts, ICacheService cache)
+        List<Account> accounts, ICacheService cache, DashboardActions? actions = null)
     {
         var controls = new List<IWindowControl>();
 
@@ -141,12 +153,15 @@ public static class AccountDashboard
         foreach (var (account, messages, unread, flagged, folders, lastSync, acctOldestUnread) in accountStats)
         {
             var syncStr = lastSync?.ToString("MMM d, h:mm tt") ?? "Never";
+            var acctId = account.Id;
 
-            controls.Add(Controls.Markup()
-                .AddEmptyLine()
-                .AddLine($"  \U0001f4e7 [white bold]{MarkupParser.Escape(account.Name)}[/]  [grey50]{MarkupParser.Escape(account.Email)}[/]")
-                .WithAlignment(HorizontalAlignment.Stretch)
-                .Build());
+            var accountBar = Controls.StatusBar()
+                .AddLeftText($"  \U0001f4e7 [white bold]{MarkupParser.Escape(account.Name)}[/]  [grey50]{MarkupParser.Escape(account.Email)}[/]",
+                    actions?.OnAccountClick != null ? () => actions.OnAccountClick(acctId) : null)
+                .WithMargin(0, 1, 0, 0)
+                .Build();
+            accountBar.BackgroundColor = Color.Transparent;
+            controls.Add(accountBar);
 
             // Bar graph showing unread vs total
             controls.Add(Controls.BarGraph()
@@ -188,28 +203,43 @@ public static class AccountDashboard
             .WithMargin(2, 0, 2, 0)
             .Build());
 
-        controls.Add(Controls.Markup()
-            .AddEmptyLine()
-            .AddLine("  [cyan1]Ctrl+N[/]   [grey70]Compose new message[/]")
-            .AddLine("  [cyan1]Ctrl+S[/]   [grey70]Search messages[/]")
-            .AddLine("  [cyan1]F5[/]       [grey70]Sync all accounts[/]")
-            .AddLine("  [cyan1]Ctrl+,[/]   [grey70]Settings & account management[/]")
-            .AddEmptyLine()
-            .WithAlignment(HorizontalAlignment.Stretch)
-            .Build());
+        if (actions != null)
+        {
+            var actionBar = Controls.StatusBar()
+                .AddLeft("Ctrl+N", "Compose", actions.OnCompose)
+                .AddLeft("Ctrl+S", "Search", actions.OnSearch)
+                .AddLeft("F5", "Sync All", actions.OnSync)
+                .AddLeft("Ctrl+,", "Settings", actions.OnSettings)
+                .WithMargin(2, 1, 2, 1)
+                .Build();
+            actionBar.BackgroundColor = Color.Transparent;
+            controls.Add(actionBar);
+        }
+        else
+        {
+            controls.Add(Controls.Markup()
+                .AddEmptyLine()
+                .AddLine("  [cyan1]Ctrl+N[/]   [grey70]Compose new message[/]")
+                .AddLine("  [cyan1]Ctrl+S[/]   [grey70]Search messages[/]")
+                .AddLine("  [cyan1]F5[/]       [grey70]Sync all accounts[/]")
+                .AddLine("  [cyan1]Ctrl+,[/]   [grey70]Settings & account management[/]")
+                .AddEmptyLine()
+                .WithAlignment(HorizontalAlignment.Stretch)
+                .Build());
+        }
 
         return controls;
     }
 
     public static List<IWindowControl> BuildAccountDashboard(
-        Account account, ICacheService cache)
+        Account account, ICacheService cache, DashboardActions? actions = null)
     {
         var controls = new List<IWindowControl>();
         var folders = cache.GetFolders(account.Id);
 
         var totalMessages = 0;
         var totalUnread = 0;
-        var folderRows = new List<(string icon, string name, int messages, int unread)>();
+        var folderRows = new List<(string icon, string name, int messages, int unread, int folderId)>();
 
         foreach (var folder in folders.OrderBy(f => f.Path))
         {
@@ -219,7 +249,7 @@ public static class AccountDashboard
             var unread = msgs.Count(m => !m.IsRead);
             totalMessages += msgs.Count;
             totalUnread += unread;
-            folderRows.Add((GetFolderIcon(folder.DisplayName), folder.DisplayName, msgs.Count, unread));
+            folderRows.Add((GetFolderIcon(folder.DisplayName), folder.DisplayName, msgs.Count, unread, folder.Id));
         }
 
         // ── Header ──────────────────────────────────────────────────────
@@ -258,23 +288,38 @@ public static class AccountDashboard
 
         var maxFolderSize = folderRows.Count > 0 ? folderRows.Max(f => f.messages) : 1;
 
-        foreach (var (icon, name, messages, unread) in folderRows)
+        foreach (var (icon, name, messages, unread, folderId) in folderRows)
         {
-            if (messages == 0 && unread == 0) continue; // Skip empty folders
+            if (messages == 0 && unread == 0) continue;
 
-            var barColor = unread > 0 ? Color.Yellow : Color.Grey30;
-
-            controls.Add(Controls.BarGraph()
-                .WithLabel($"{icon} {name}")
-                .WithLabelWidth(22)
-                .WithValue(messages)
-                .WithMaxValue(Math.Max(maxFolderSize, 1))
-                .WithBarWidth(25)
-                .WithColors(barColor, Color.Grey15)
-                .ShowValue()
-                .WithValueFormat(unread > 0 ? $"[yellow]{unread}[/] / {messages}" : $"{messages}")
-                .WithMargin(2, 0, 2, 0)
-                .Build());
+            var fId = folderId;
+            if (actions?.OnFolderClick != null)
+            {
+                // Clickable folder row
+                var folderBar = Controls.StatusBar()
+                    .AddLeftText(
+                        $"  {icon} [{(unread > 0 ? "white bold" : "grey70")}]{MarkupParser.Escape(name)}[/]  [grey50]{messages} msgs{(unread > 0 ? $", [yellow]{unread} unread[/]" : "")}[/]",
+                        () => actions.OnFolderClick(fId))
+                    .WithMargin(2, 0, 2, 0)
+                    .Build();
+                folderBar.BackgroundColor = Color.Transparent;
+                controls.Add(folderBar);
+            }
+            else
+            {
+                var barColor = unread > 0 ? Color.Yellow : Color.Grey30;
+                controls.Add(Controls.BarGraph()
+                    .WithLabel($"{icon} {name}")
+                    .WithLabelWidth(22)
+                    .WithValue(messages)
+                    .WithMaxValue(Math.Max(maxFolderSize, 1))
+                    .WithBarWidth(25)
+                    .WithColors(barColor, Color.Grey15)
+                    .ShowValue()
+                    .WithValueFormat(unread > 0 ? $"[yellow]{unread}[/] / {messages}" : $"{messages}")
+                    .WithMargin(2, 0, 2, 0)
+                    .Build());
+            }
         }
 
         // ── Account Details ─────────────────────────────────────────────
@@ -313,14 +358,28 @@ public static class AccountDashboard
             .WithMargin(2, 0, 2, 0)
             .Build());
 
-        controls.Add(Controls.Markup()
-            .AddEmptyLine()
-            .AddLine("  [cyan1]Ctrl+N[/]   [grey70]Compose new message[/]")
-            .AddLine("  [cyan1]F5[/]       [grey70]Sync this account[/]")
-            .AddLine("  [cyan1]Ctrl+,[/]   [grey70]Edit account settings[/]")
-            .AddEmptyLine()
-            .WithAlignment(HorizontalAlignment.Stretch)
-            .Build());
+        if (actions != null)
+        {
+            var actionBar = Controls.StatusBar()
+                .AddLeft("Ctrl+N", "Compose", actions.OnCompose)
+                .AddLeft("F5", "Sync", actions.OnSync)
+                .AddLeft("Ctrl+,", "Settings", actions.OnSettings)
+                .WithMargin(2, 1, 2, 1)
+                .Build();
+            actionBar.BackgroundColor = Color.Transparent;
+            controls.Add(actionBar);
+        }
+        else
+        {
+            controls.Add(Controls.Markup()
+                .AddEmptyLine()
+                .AddLine("  [cyan1]Ctrl+N[/]   [grey70]Compose new message[/]")
+                .AddLine("  [cyan1]F5[/]       [grey70]Sync this account[/]")
+                .AddLine("  [cyan1]Ctrl+,[/]   [grey70]Edit account settings[/]")
+                .AddEmptyLine()
+                .WithAlignment(HorizontalAlignment.Stretch)
+                .Build());
+        }
 
         return controls;
     }
