@@ -14,6 +14,12 @@ public class MailSyncCoordinator
     private readonly Lazy<CXPostApp> _app;
     private readonly NotificationCoordinator _notifications;
     private readonly ConcurrentDictionary<string, bool> _syncingAccounts = new();
+    private readonly ConcurrentDictionary<int, bool> _syncingFolderIds = new();
+
+    /// <summary>
+    /// Set of folder IDs currently being synced — used by UI for sync animation.
+    /// </summary>
+    public ICollection<int> SyncingFolderIds => _syncingFolderIds.Keys;
 
     public MailSyncCoordinator(
         ImapConnectionFactory imapFactory,
@@ -68,14 +74,26 @@ public class MailSyncCoordinator
                     var folder = cachedFolders[i];
                     var progress = i + 1;
                     var total = cachedFolders.Count;
+
+                    _syncingFolderIds.TryAdd(folder.Id, true);
                     _app.Value.EnqueueUiAction(() =>
+                    {
                         _app.Value.ReplaceMessage(syncMsgId,
-                            $"{account.Name}: Syncing {folder.DisplayName} ({progress}/{total})..."));
+                            $"{account.Name}: Syncing {folder.DisplayName} ({progress}/{total})...");
+                        _app.Value.RefreshFolderTree();
+                    });
 
                     var beforeCount = _cache.GetCachedUids(folder.Id).Count;
                     await SyncFolderAsync(account, folder, imap, ct);
                     var afterCount = _cache.GetCachedUids(folder.Id).Count;
                     totalMessages += afterCount - beforeCount;
+
+                    _syncingFolderIds.TryRemove(folder.Id, out _);
+                    _app.Value.EnqueueUiAction(() =>
+                    {
+                        _app.Value.RefreshFolderTree();
+                        _app.Value.RefreshCurrentMessageListIfFolder(folder.Id);
+                    });
                 }
             }
             finally
@@ -95,8 +113,6 @@ public class MailSyncCoordinator
 
             _app.Value.EnqueueUiAction(() =>
             {
-                _app.Value.RefreshFolderTree();
-                _app.Value.RefreshCurrentMessageList();
                 _app.Value.DismissMessage(syncMsgId);
                 if (account.NotificationsEnabled)
                     _notifications.NotifySyncComplete(account.Name, totalMessages);

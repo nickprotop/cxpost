@@ -70,6 +70,10 @@ public class CXPostApp : IDisposable
     private Dictionary<string, List<MailFolder>> _aggregatedFolders = new(StringComparer.OrdinalIgnoreCase);
     private bool _isAggregatedView;
 
+    // Sync animation
+    private static readonly string[] SpinnerFrames = ["◐", "◑", "◒", "◓"];
+    private int _spinnerIndex;
+
     // Search state
     private bool _isSearchActive;
     private string? _activeSearchQuery;
@@ -550,7 +554,14 @@ public class CXPostApp : IDisposable
                 UpdateClockDisplay();
                 _messageBar?.Tick();
 
-                await Task.Delay(1000, ct);
+                // Advance sync spinner animation
+                if (_syncCoordinator.SyncingFolderIds.Count > 0)
+                {
+                    _spinnerIndex = (_spinnerIndex + 1) % SpinnerFrames.Length;
+                    PopulateFolderTree();
+                }
+
+                await Task.Delay(500, ct);
             }
             catch (OperationCanceledException) { break; }
         }
@@ -571,13 +582,14 @@ public class CXPostApp : IDisposable
         _topStatusRight.SetContent([status]);
     }
 
-    private static string FormatFolderNodeText(string icon, string displayName, int unread, int total)
+    private string FormatFolderNodeText(string icon, string displayName, int unread, int total, bool isSyncing = false)
     {
+        var spinner = isSyncing ? $" [cyan]{SpinnerFrames[_spinnerIndex]}[/]" : "";
         if (unread > 0)
-            return $"{icon} {MarkupParser.Escape(displayName)} [yellow]({unread})[/]";
+            return $"{icon} {MarkupParser.Escape(displayName)} [yellow]({unread})[/]{spinner}";
         if (total > 0)
-            return $"{icon} {MarkupParser.Escape(displayName)} [grey35]({total})[/]";
-        return $"[grey70]{icon} {MarkupParser.Escape(displayName)}[/]";
+            return $"{icon} {MarkupParser.Escape(displayName)} [grey35]({total})[/]{spinner}";
+        return $"[grey70]{icon} {MarkupParser.Escape(displayName)}[/]{spinner}";
     }
 
     private MailFolder? FindFolderById(int folderId)
@@ -648,7 +660,8 @@ public class CXPostApp : IDisposable
 
             totalUnread += unread;
 
-            var text = FormatFolderNodeText(icon, type, unread, total);
+            var anySyncing = typeFolders.Any(f => _syncCoordinator.SyncingFolderIds.Contains(f.Id));
+            var text = FormatFolderNodeText(icon, type, unread, total, anySyncing);
 
             TreeNode? typeNode = null;
             foreach (var child in allNode.Children)
@@ -722,7 +735,8 @@ public class CXPostApp : IDisposable
                 var msgs = _cacheService.GetMessages(folder.Id);
                 var unread = msgs.Count(m => !m.IsRead);
                 var total = msgs.Count;
-                var text = FormatFolderNodeText(icon, folder.DisplayName, unread, total);
+                var isSyncing = _syncCoordinator.SyncingFolderIds.Contains(folder.Id);
+                var text = FormatFolderNodeText(icon, folder.DisplayName, unread, total, isSyncing);
 
                 TreeNode? folderNode = null;
                 foreach (var child in accountNode.Children)
@@ -927,6 +941,16 @@ public class CXPostApp : IDisposable
     {
         if (_isSearchActive) return;
         _messageListCoordinator.RefreshMessageList();
+    }
+
+    /// <summary>
+    /// Refreshes the message list only if the given folder is currently selected.
+    /// </summary>
+    public void RefreshCurrentMessageListIfFolder(int folderId)
+    {
+        if (_isSearchActive) return;
+        if (_messageListCoordinator.CurrentFolder?.Id == folderId)
+            _messageListCoordinator.RefreshMessageList();
     }
 
     private void SetRightPanelHeader(string text, string? clearAction = null)
