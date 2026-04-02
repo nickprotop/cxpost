@@ -169,7 +169,6 @@ public class MessageListCoordinator
         if (CurrentFolder == null) return;
 
         await _sync.FetchBodyAsync(CurrentFolder, message, ct);
-        _app.Value.EnqueueUiAction(() => _app.Value.ShowMessagePreview(message));
 
         // Mark as read (if account setting allows)
         if (!message.IsRead)

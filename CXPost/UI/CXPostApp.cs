@@ -66,8 +66,12 @@ public class CXPostApp : IDisposable
     // Message bar
     private Components.MessageBar? _messageBar;
 
+    // Cancels the previous body fetch when user selects a different message
+    private CancellationTokenSource? _bodyFetchCts;
+
     // Aggregated folder lookup for in-place tree updates
     private Dictionary<string, List<MailFolder>> _aggregatedFolders = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<int>? _aggregatedFolderIds;
     private bool _isAggregatedView;
 
     // Sync animation
@@ -811,6 +815,7 @@ public class CXPostApp : IDisposable
         if (args.Node?.Tag is FolderTag ft)
         {
             _isAggregatedView = false;
+            _aggregatedFolderIds = null;
             var folder = FindFolderById(ft.FolderId);
             if (folder == null) return;
 
@@ -835,6 +840,7 @@ public class CXPostApp : IDisposable
             _isAggregatedView = true;
             if (_aggregatedFolders.TryGetValue(agg.TypeKey, out var aggregatedFolders) && aggregatedFolders.Count > 0)
             {
+                _aggregatedFolderIds = new HashSet<int>(aggregatedFolders.Select(f => f.Id));
                 ShowMessageListView();
                 var allMessages = new List<MailMessage>();
                 MailFolder? lastFolder = null;
@@ -862,6 +868,7 @@ public class CXPostApp : IDisposable
         else if (args.Node?.Tag is AccountTag acctTag)
         {
             _isAggregatedView = false;
+            _aggregatedFolderIds = null;
             var account = _config.Accounts.FirstOrDefault(a => a.Id == acctTag.AccountId);
             if (account != null)
             {
@@ -878,6 +885,7 @@ public class CXPostApp : IDisposable
         else if (args.Node?.Tag is string tag && tag == "all-accounts")
         {
             _isAggregatedView = false;
+            _aggregatedFolderIds = null;
             ShowDashboardView(
                 Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService));
 
@@ -949,8 +957,69 @@ public class CXPostApp : IDisposable
     public void RefreshCurrentMessageListIfFolder(int folderId)
     {
         if (_isSearchActive) return;
+
+        // Check if this folder is the current folder
         if (_messageListCoordinator.CurrentFolder?.Id == folderId)
+        {
+            // Check if the currently previewed message was removed
+            var selectedMsg = _messageListCoordinator.SelectedMessage;
+            if (selectedMsg != null)
+            {
+                var cachedUids = _cacheService.GetCachedUids(folderId);
+                if (!cachedUids.Contains(selectedMsg.Uid))
+                {
+                    // Selected message was deleted on server — clear preview
+                    _messageListCoordinator.SelectMessage(null!);
+                    ClearReadingPane();
+                    UpdatePreviewHeader();
+                }
+                else
+                {
+                    // Refresh the preview in case flags changed
+                    var msgs = _cacheService.GetMessages(folderId);
+                    var updated = msgs.FirstOrDefault(m => m.Uid == selectedMsg.Uid);
+                    if (updated != null && (updated.IsRead != selectedMsg.IsRead || updated.IsFlagged != selectedMsg.IsFlagged))
+                    {
+                        _messageListCoordinator.SelectMessage(updated);
+                        ShowMessagePreview(updated);
+                    }
+                }
+            }
+
             _messageListCoordinator.RefreshMessageList();
+            RetainMessageListFocus();
+            return;
+        }
+
+        // Check if this folder is part of an aggregated view
+        if (_aggregatedFolderIds != null && _aggregatedFolderIds.Contains(folderId))
+        {
+            RefreshAggregatedView();
+            RetainMessageListFocus();
+        }
+    }
+
+    private void RefreshAggregatedView()
+    {
+        if (_aggregatedFolderIds == null) return;
+        var allMessages = new List<MailMessage>();
+        foreach (var fId in _aggregatedFolderIds)
+            allMessages.AddRange(_cacheService.GetMessages(fId));
+        allMessages.Sort((a, b) => b.Date.CompareTo(a.Date));
+        PopulateMessageList(allMessages);
+    }
+
+    /// <summary>
+    /// Called when a folder that was part of the current view is deleted from the server.
+    /// </summary>
+    public void HandleCurrentFolderDeleted()
+    {
+        _messageTable?.ClearRows();
+        ClearReadingPane();
+        UpdatePreviewHeader();
+        _messageListCoordinator.SelectFolder(null!);
+        UpdateHelpBar();
+        UpdateToolbar();
     }
 
     private void SetRightPanelHeader(string text, string? clearAction = null)
@@ -1168,19 +1237,46 @@ public class CXPostApp : IDisposable
         UpdatePreviewHeader(msg);
         UpdateHelpBar();
         UpdateToolbar();
+        RetainMessageListFocus();
 
         _messageListCoordinator.SelectMessage(msg);
-        _ = Task.Run(async () =>
+
+        // Cancel any in-flight body fetch from a previous selection
+        _bodyFetchCts?.Cancel();
+        _bodyFetchCts?.Dispose();
+
+        // Fetch body + attachments if not fully loaded
+        var needsBody = !msg.BodyFetched;
+        var needsAttachments = msg.HasAttachments && msg.Attachments == null;
+        if (needsBody || needsAttachments)
         {
-            try
+            var fetchCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            _bodyFetchCts = fetchCts;
+            var capturedUid = msg.Uid;
+
+            _ = Task.Run(async () =>
             {
-                await _messageListCoordinator.FetchAndShowBodyAsync(msg, _cts.Token);
-            }
-            catch (Exception ex)
-            {
-                EnqueueUiAction(() => ShowError($"Failed to load message: {ex.Message}"));
-            }
-        }, _cts.Token);
+                try
+                {
+                    await _messageListCoordinator.FetchAndShowBodyAsync(msg, fetchCts.Token);
+
+                    // Only update UI if this message is still selected
+                    EnqueueUiAction(() =>
+                    {
+                        if (_messageListCoordinator.SelectedMessage?.Uid == capturedUid)
+                        {
+                            ShowMessagePreview(msg);
+                            RetainMessageListFocus();
+                        }
+                    });
+                }
+                catch (OperationCanceledException) { /* superseded by newer selection */ }
+                catch (Exception ex)
+                {
+                    EnqueueUiAction(() => ShowError($"Failed to load message: {ex.Message}"));
+                }
+            }, fetchCts.Token);
+        }
     }
 
     private void OnMessageActivated(object? sender, int rowIndex)
@@ -1444,6 +1540,19 @@ public class CXPostApp : IDisposable
         if (bytes < 1024) return $"{bytes} B";
         if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
         return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    /// <summary>
+    /// Re-focuses the message table if it was the last focused control.
+    /// Prevents body fetch / mark-as-read from stealing focus to reading pane.
+    /// </summary>
+    public void RetainMessageListFocus()
+    {
+        if (_messageTable == null || _mainWindow == null) return;
+        var focused = _mainWindow.FocusManager?.FocusedControl;
+        // If nothing is focused, or a non-interactive control got focus, restore to table
+        if (focused == null || focused == _readingPane || focused is MarkupControl || focused is ScrollablePanelControl)
+            _mainWindow.FocusManager?.SetFocus(_messageTable, FocusReason.Programmatic);
     }
 
     public void ClearReadingPane()
