@@ -145,10 +145,7 @@ public class MessageListCoordinator
 
                 // Undo window expired — ephemeral connection for server delete
                 using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
-                var folders = _cache.GetFolders(folder.AccountId);
-                var trash = folders.FirstOrDefault(f =>
-                    f.Path.Equals("Trash", StringComparison.OrdinalIgnoreCase) ||
-                    f.Path.Contains("[Gmail]/Trash", StringComparison.OrdinalIgnoreCase));
+                var trash = FolderResolver.GetTrash(account, _cache);
 
                 if (trash != null && folder.Id != trash.Id)
                     await imap.MoveMessageAsync(folder.Path, trash.Path, message.Uid, ct);

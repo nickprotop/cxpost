@@ -125,11 +125,7 @@ public class ComposeCoordinator
         }
 
         // Copy to Sent folder
-        var folders = _cache.GetFolders(account.Id);
-        var sent = folders.FirstOrDefault(f =>
-            f.Path.Equals("Sent", StringComparison.OrdinalIgnoreCase) ||
-            f.Path.Contains("[Gmail]/Sent", StringComparison.OrdinalIgnoreCase) ||
-            f.Path.Contains("Sent Messages", StringComparison.OrdinalIgnoreCase));
+        var sent = FolderResolver.GetSent(account, _cache);
 
         if (sent != null)
         {

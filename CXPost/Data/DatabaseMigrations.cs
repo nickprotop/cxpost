@@ -49,11 +49,13 @@ public static class DatabaseMigrations
 
         // Migration: add attachments_json column if missing
         using var migrate = connection.CreateCommand();
-        migrate.CommandText = """
-            ALTER TABLE messages ADD COLUMN attachments_json TEXT;
-            """;
-        try { migrate.ExecuteNonQuery(); }
-        catch { /* column already exists */ }
+        migrate.CommandText = "ALTER TABLE messages ADD COLUMN attachments_json TEXT;";
+        try { migrate.ExecuteNonQuery(); } catch { }
+
+        // Migration: add folder_type column if missing
+        using var migrate2 = connection.CreateCommand();
+        migrate2.CommandText = "ALTER TABLE folders ADD COLUMN folder_type INTEGER NOT NULL DEFAULT 0;";
+        try { migrate2.ExecuteNonQuery(); } catch { }
     }
 
     public static void ApplyContacts(SqliteConnection connection)

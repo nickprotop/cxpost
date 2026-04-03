@@ -77,7 +77,8 @@ public class ImapService : IImapService, IDisposable
                     DisplayName = f.Name,
                     UidValidity = f.UidValidity,
                     UnreadCount = f.Unread,
-                    TotalCount = f.Count
+                    TotalCount = f.Count,
+                    FolderType = DetectFolderType(f)
                 });
                 await f.CloseAsync(false, ct);
             }
@@ -380,6 +381,42 @@ public class ImapService : IImapService, IDisposable
     {
         if (!IsConnected)
             throw new InvalidOperationException("Not connected to IMAP server. Call ConnectAsync first.");
+    }
+
+    private static Models.FolderType DetectFolderType(MailKit.IMailFolder f)
+    {
+        var attrs = f.Attributes;
+
+        // IMAP special-use attributes (RFC 6154)
+        if (attrs.HasFlag(MailKit.FolderAttributes.Inbox)) return Models.FolderType.Inbox;
+        if (attrs.HasFlag(MailKit.FolderAttributes.Sent))
+            return Models.FolderType.Sent;
+        if (attrs.HasFlag(MailKit.FolderAttributes.Drafts)) return Models.FolderType.Drafts;
+        if (attrs.HasFlag(MailKit.FolderAttributes.Trash)) return Models.FolderType.Trash;
+        if (attrs.HasFlag(MailKit.FolderAttributes.Junk)) return Models.FolderType.Spam;
+        if (attrs.HasFlag(MailKit.FolderAttributes.Archive) || attrs.HasFlag(MailKit.FolderAttributes.All))
+            return Models.FolderType.Archive;
+        if (attrs.HasFlag(MailKit.FolderAttributes.Flagged)) return Models.FolderType.Starred;
+
+        // Fallback: name heuristics
+        return DetectFolderTypeByName(f.Name, f.FullName);
+    }
+
+    private static Models.FolderType DetectFolderTypeByName(string name, string path)
+    {
+        var lower = name.ToLowerInvariant();
+        var pathLower = path.ToLowerInvariant();
+
+        if (lower == "inbox" || pathLower == "inbox") return Models.FolderType.Inbox;
+        if (lower.Contains("sent") || pathLower.Contains("sent")) return Models.FolderType.Sent;
+        if (lower.Contains("draft") || pathLower.Contains("draft")) return Models.FolderType.Drafts;
+        if (lower.Contains("trash") || lower.Contains("deleted") || pathLower.Contains("trash")) return Models.FolderType.Trash;
+        if (lower.Contains("spam") || lower.Contains("junk") || pathLower.Contains("spam") || pathLower.Contains("junk")) return Models.FolderType.Spam;
+        if (lower.Contains("archive") || pathLower.Contains("archive") || lower.Contains("all mail")) return Models.FolderType.Archive;
+        if (lower.Contains("star") || lower.Contains("flagged") || pathLower.Contains("starred")) return Models.FolderType.Starred;
+        if (lower.Contains("important") || pathLower.Contains("important")) return Models.FolderType.Important;
+
+        return Models.FolderType.Other;
     }
 
     public void Dispose()

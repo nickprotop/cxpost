@@ -12,6 +12,8 @@ namespace CXPost.UI.Dialogs;
 public class AccountSettingsDialog : DialogBase<Account?>
 {
     private readonly Account? _existing;
+    private readonly List<string> _folderPaths;
+    private readonly Dictionary<FolderType, string> _detectedFolders;
 
     // General tab
     private PromptControl? _nameField;
@@ -40,11 +42,20 @@ public class AccountSettingsDialog : DialogBase<Account?>
     private CheckboxControl? _markAsReadCheckbox;
     private CheckboxControl? _notificationsCheckbox;
 
+    // Folder overrides
+    private PromptControl? _trashPathField;
+    private PromptControl? _sentPathField;
+    private PromptControl? _draftsPathField;
+    private PromptControl? _spamPathField;
+
     private TabControl? _tabControl;
 
-    public AccountSettingsDialog(Account? existing = null)
+    public AccountSettingsDialog(Account? existing = null, List<string>? folderPaths = null,
+        Dictionary<FolderType, string>? detectedFolders = null)
     {
         _existing = existing;
+        _folderPaths = folderPaths ?? [];
+        _detectedFolders = detectedFolders ?? [];
     }
 
     protected override string GetTitle() => _existing != null ? "Account Settings" : "Add Account";
@@ -235,6 +246,44 @@ public class AccountSettingsDialog : DialogBase<Account?>
             .Build();
         panel.AddControl(_notificationsCheckbox);
 
+        var folderRule = Controls.RuleBuilder().WithColor(Color.Grey23).Build();
+        folderRule.Margin = new Margin(1, 1, 1, 0);
+        panel.AddControl(folderRule);
+
+        panel.AddControl(Controls.Markup("[grey70 bold]Folder Paths[/]")
+            .WithMargin(1, 1, 1, 0).Build());
+
+        // Adaptive hint based on detection state
+        var requiredTypes = new[] { FolderType.Trash, FolderType.Sent, FolderType.Drafts, FolderType.Spam };
+        if (_folderPaths.Count == 0)
+        {
+            panel.AddControl(Controls.Markup(
+                $"  [{ColorScheme.PrimaryMarkup}]\u2139[/] [grey50]Folder paths will be auto-detected after first sync.[/]")
+                .WithMargin(1, 0, 1, 0).Build());
+        }
+        else
+        {
+            var missing = requiredTypes.Where(t => !_detectedFolders.ContainsKey(t)).ToList();
+            if (missing.Count == 0)
+            {
+                panel.AddControl(Controls.Markup(
+                    $"  [{ColorScheme.SuccessMarkup}]\u2713[/] [grey50]All folders auto-detected successfully.[/]")
+                    .WithMargin(1, 0, 1, 0).Build());
+            }
+            else
+            {
+                var names = string.Join(", ", missing.Select(t => t.ToString()));
+                panel.AddControl(Controls.Markup(
+                    $"  [{ColorScheme.FlaggedMarkup}]\u26a0[/] [grey50]Could not detect {names}. Select manually below.[/]")
+                    .WithMargin(1, 0, 1, 0).Build());
+            }
+        }
+
+        AddFolderFieldToPanel(panel, "Trash", FolderType.Trash, ref _trashPathField, _existing?.TrashFolderPath ?? "");
+        AddFolderFieldToPanel(panel, "Sent", FolderType.Sent, ref _sentPathField, _existing?.SentFolderPath ?? "");
+        AddFolderFieldToPanel(panel, "Drafts", FolderType.Drafts, ref _draftsPathField, _existing?.DraftsFolderPath ?? "");
+        AddFolderFieldToPanel(panel, "Spam/Junk", FolderType.Spam, ref _spamPathField, _existing?.SpamFolderPath ?? "");
+
         return panel;
     }
 
@@ -246,6 +295,55 @@ public class AccountSettingsDialog : DialogBase<Account?>
         field.HorizontalAlignment = HorizontalAlignment.Stretch;
         field.Margin = new Margin(1, 0, 1, 1);
         panel.AddControl(field);
+    }
+
+    private void AddFolderFieldToPanel(ScrollablePanelControl panel, string label, FolderType type,
+        ref PromptControl? field, string overridePath)
+    {
+        // Show label with detected status
+        var detected = _detectedFolders.TryGetValue(type, out var detectedPath) ? detectedPath : null;
+        var hasOverride = !string.IsNullOrEmpty(overridePath);
+
+        string statusLine;
+        if (hasOverride)
+            statusLine = $"[{ColorScheme.MutedMarkup}]{label}:[/]  [cyan1]{SharpConsoleUI.Parsing.MarkupParser.Escape(overridePath)}[/]  [grey35](manual)[/]";
+        else if (detected != null)
+            statusLine = $"[{ColorScheme.MutedMarkup}]{label}:[/]  [green]{SharpConsoleUI.Parsing.MarkupParser.Escape(detected)}[/]  [grey35](auto-detected)[/]";
+        else
+            statusLine = $"[{ColorScheme.MutedMarkup}]{label}:[/]  [yellow]Not found[/]";
+
+        panel.AddControl(Controls.Markup(statusLine)
+            .WithMargin(1, 1, 1, 0).Build());
+
+        // Dropdown for override
+        if (_folderPaths.Count > 0)
+        {
+            var options = new List<string> { detected != null ? $"Auto ({detected})" : "Auto-detect" };
+            options.AddRange(_folderPaths);
+
+            field = new PromptControl { Prompt = "", Input = overridePath };
+            field.Visible = false; // Hidden — dropdown drives the value
+
+            var currentIdx = hasOverride ? Math.Max(0, _folderPaths.IndexOf(overridePath) + 1) : 0;
+            var dropdown = new DropdownControl("", options.ToArray());
+            dropdown.SelectedIndex = currentIdx;
+            dropdown.Margin = new Margin(1, 0, 1, 0);
+
+            var promptField = field;
+            dropdown.SelectedIndexChanged += (_, idx) =>
+            {
+                promptField.Input = idx == 0 ? "" : (idx > 0 && idx < options.Count ? options[idx] : "");
+            };
+            panel.AddControl(dropdown);
+            panel.AddControl(field);
+        }
+        else
+        {
+            field = new PromptControl { Prompt = "Override: ", Input = overridePath };
+            field.HorizontalAlignment = HorizontalAlignment.Stretch;
+            field.Margin = new Margin(1, 0, 1, 0);
+            panel.AddControl(field);
+        }
     }
 
     private void TrySave()
@@ -273,6 +371,12 @@ public class AccountSettingsDialog : DialogBase<Account?>
         account.MaxMessagesPerFolder = int.TryParse(_maxMessagesField?.Input, out var mm) ? mm : 0;
         account.MarkAsReadOnView = _markAsReadCheckbox?.Checked ?? true;
         account.NotificationsEnabled = _notificationsCheckbox?.Checked ?? true;
+
+        // Folder overrides
+        account.TrashFolderPath = _trashPathField?.Input?.Trim() ?? "";
+        account.SentFolderPath = _sentPathField?.Input?.Trim() ?? "";
+        account.DraftsFolderPath = _draftsPathField?.Input?.Trim() ?? "";
+        account.SpamFolderPath = _spamPathField?.Input?.Trim() ?? "";
 
         CloseWithResult(account);
     }
@@ -309,7 +413,11 @@ public class AccountSettingsDialog : DialogBase<Account?>
             || _replyPrefixField?.HasFocus == true
             || _forwardPrefixField?.HasFocus == true
             || _syncIntervalField?.HasFocus == true
-            || _maxMessagesField?.HasFocus == true;
+            || _maxMessagesField?.HasFocus == true
+            || _trashPathField?.HasFocus == true
+            || _sentPathField?.HasFocus == true
+            || _draftsPathField?.HasFocus == true
+            || _spamPathField?.HasFocus == true;
     }
 
     public string? GetPassword() => _passwordField?.Input;

@@ -100,17 +100,31 @@ public static class MessageFormatter
         return $"{prefix} {subject}";
     }
 
+    public static string GetFolderIcon(FolderType type) => type switch
+    {
+        FolderType.Inbox => "\U0001f4e5",
+        FolderType.Sent => "\U0001f4e4",
+        FolderType.Drafts => "\u270f\ufe0f",
+        FolderType.Trash => "\U0001f5d1\ufe0f",
+        FolderType.Spam => "\u26a0\ufe0f",
+        FolderType.Archive => "\U0001f4e6",
+        FolderType.Starred => "\u2b50",
+        FolderType.Important => "\u2757",
+        _ => "\U0001f4c1"
+    };
+
+    // Legacy overload for string-based lookups
     public static string GetFolderIcon(string folderName)
     {
         var lower = folderName.ToLowerInvariant();
-        if (lower.Contains("inbox")) return "\U0001f4e5";
-        if (lower.Contains("sent")) return "\U0001f4e4";
-        if (lower.Contains("draft")) return "\u270f\ufe0f";
-        if (lower.Contains("trash") || lower.Contains("deleted")) return "\U0001f5d1\ufe0f";
-        if (lower.Contains("spam") || lower.Contains("junk")) return "\u26a0\ufe0f";
-        if (lower.Contains("archive") || lower.Contains("all mail")) return "\U0001f4e6";
-        if (lower.Contains("star") || lower.Contains("flagged")) return "\u2b50";
-        return "\U0001f4c1";
+        if (lower.Contains("inbox")) return GetFolderIcon(FolderType.Inbox);
+        if (lower.Contains("sent")) return GetFolderIcon(FolderType.Sent);
+        if (lower.Contains("draft")) return GetFolderIcon(FolderType.Drafts);
+        if (lower.Contains("trash") || lower.Contains("deleted")) return GetFolderIcon(FolderType.Trash);
+        if (lower.Contains("spam") || lower.Contains("junk")) return GetFolderIcon(FolderType.Spam);
+        if (lower.Contains("archive") || lower.Contains("all mail")) return GetFolderIcon(FolderType.Archive);
+        if (lower.Contains("star") || lower.Contains("flagged")) return GetFolderIcon(FolderType.Starred);
+        return GetFolderIcon(FolderType.Other);
     }
 
 }

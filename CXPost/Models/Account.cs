@@ -24,6 +24,12 @@ public class Account
     public int MaxMessagesPerFolder { get; set; } = 0;
     public bool MarkAsReadOnView { get; set; } = true;
     public bool NotificationsEnabled { get; set; } = true;
+
+    // Folder path overrides (empty = auto-detect)
+    public string TrashFolderPath { get; set; } = string.Empty;
+    public string SentFolderPath { get; set; } = string.Empty;
+    public string DraftsFolderPath { get; set; } = string.Empty;
+    public string SpamFolderPath { get; set; } = string.Empty;
 }
 
 public enum SecurityType
@@ -45,4 +51,6 @@ public class CXPostConfig
     public string Layout { get; set; } = "classic";
     public int SyncIntervalSeconds { get; set; } = 300;
     public bool Notifications { get; set; } = true;
+    public string StartupView { get; set; } = "dashboard";
+    public bool ConfirmQuit { get; set; } = false;
 }

@@ -4,10 +4,22 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+
+  <!-- Local dev: use ConsoleEx project reference -->
+  <ItemGroup Condition="Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
+    <ProjectReference Include="../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
+  </ItemGroup>
+  <!-- CI/release: use NuGet package -->
+  <ItemGroup Condition="!Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
+    <PackageReference Include="SharpConsoleUI" Version="2.4.49" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
-    <ProjectReference Include="../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj" />
     <PackageReference Include="MailKit" Version="4.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.*" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="9.*" />

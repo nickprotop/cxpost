@@ -693,7 +693,7 @@ public class CXPostApp : IDisposable
             {
                 if (folder.DisplayName.StartsWith("[") && folder.DisplayName.EndsWith("]"))
                     continue;
-                var key = NormalizeFolderType(folder.DisplayName, folder.Path);
+                var key = NormalizeFolderType(folder);
                 if (!foldersByType.ContainsKey(key))
                     foldersByType[key] = [];
                 foldersByType[key].Add(folder);
@@ -840,33 +840,31 @@ public class CXPostApp : IDisposable
     /// Maps folder names from different providers to canonical type names
     /// so they can be aggregated across accounts.
     /// </summary>
-    private static string NormalizeFolderType(string displayName, string path)
+    private static string NormalizeFolderType(MailFolder folder)
     {
-        var lower = displayName.ToLowerInvariant();
-        var pathLower = path.ToLowerInvariant();
-
-        if (lower == "inbox" || pathLower == "inbox") return "Inbox";
-        if (lower.Contains("sent") || pathLower.Contains("sent")) return "Sent";
-        if (lower.Contains("draft") || pathLower.Contains("draft")) return "Drafts";
-        if (lower.Contains("trash") || lower.Contains("deleted") || pathLower.Contains("trash")) return "Trash";
-        if (lower.Contains("spam") || lower.Contains("junk") || pathLower.Contains("spam") || pathLower.Contains("junk")) return "Spam";
-        if (lower.Contains("archive") || pathLower.Contains("archive") || lower.Contains("all mail")) return "Archive";
-        if (lower.Contains("star") || lower.Contains("flagged") || pathLower.Contains("starred")) return "Starred";
-        if (lower.Contains("important") || pathLower.Contains("important")) return "Important";
-        if (lower.Contains("snoozed") || pathLower.Contains("snoozed")) return "Snoozed";
-
-        return displayName; // Custom folder — keep original name
+        return folder.FolderType switch
+        {
+            FolderType.Inbox => "Inbox",
+            FolderType.Sent => "Sent",
+            FolderType.Drafts => "Drafts",
+            FolderType.Trash => "Trash",
+            FolderType.Spam => "Spam",
+            FolderType.Archive => "Archive",
+            FolderType.Starred => "Starred",
+            FolderType.Important => "Important",
+            _ => folder.DisplayName
+        };
     }
 
     private static int FolderSortKey(string name)
     {
         var lower = name.ToLowerInvariant();
-        if (lower.Contains("inbox")) return 0;
-        if (lower.Contains("sent")) return 1;
-        if (lower.Contains("draft")) return 2;
-        if (lower.Contains("star") || lower.Contains("flagged")) return 3;
-        if (lower.Contains("spam") || lower.Contains("junk")) return 8;
-        if (lower.Contains("trash") || lower.Contains("deleted")) return 9;
+        if (lower == "inbox") return 0;
+        if (lower == "sent") return 1;
+        if (lower == "drafts") return 2;
+        if (lower == "starred") return 3;
+        if (lower == "spam") return 8;
+        if (lower == "trash") return 9;
         return 5;
     }
 
@@ -1979,17 +1977,59 @@ public class CXPostApp : IDisposable
             var folder = _messageListCoordinator.CurrentFolder;
             if (msg != null && folder != null)
             {
-                // Optimistic delete: instant UI removal + undo notification + deferred IMAP
-                _messageListCoordinator.DeleteMessageOptimistic(msg, folder, _cts.Token);
+                var account = GetAccountForMessage(msg) ?? GetCurrentAccount();
+                var trash = account != null ? FolderResolver.GetTrash(account, _cacheService) : null;
+                var isInTrash = trash != null && folder.Id == trash.Id;
+                var noTrash = trash == null;
 
-                // Update UI after removal
-                var nextMsg = GetSelectedMessage();
-                if (nextMsg != null)
-                    ShowMessagePreview(nextMsg);
+                if (isInTrash || noTrash)
+                {
+                    // Permanent delete — needs confirmation
+                    _ = Task.Run(async () =>
+                    {
+                        var dialog = new ConfirmDialog(
+                            "Permanently Delete",
+                            "This message will be permanently deleted. This cannot be undone.");
+                        var confirmed = await dialog.ShowAsync(_ws);
+                        if (confirmed)
+                        {
+                            EnqueueUiAction(() =>
+                            {
+                                _cacheService.DeleteMessage(folder.Id, msg.Uid);
+                                _messageListCoordinator.RefreshMessageList();
+                                var nextMsg = GetSelectedMessage();
+                                if (nextMsg != null)
+                                    ShowMessagePreview(nextMsg);
+                                else
+                                    ClearReadingPane();
+                                UpdateHelpBar();
+                                UpdateToolbar();
+                            });
+
+                            try
+                            {
+                                using var imap = await _imapFactory.CreateConnectionAsync(account!, _cts.Token);
+                                await imap.DeleteMessageAsync(folder.Path, msg.Uid, _cts.Token);
+                            }
+                            catch (Exception ex)
+                            {
+                                EnqueueUiAction(() => ShowError($"Delete failed: {ex.Message}"));
+                            }
+                        }
+                    });
+                }
                 else
-                    ClearReadingPane();
-                UpdateHelpBar();
-                UpdateToolbar();
+                {
+                    // Move to Trash — optimistic + undo
+                    _messageListCoordinator.DeleteMessageOptimistic(msg, folder, _cts.Token);
+                    var nextMsg = GetSelectedMessage();
+                    if (nextMsg != null)
+                        ShowMessagePreview(nextMsg);
+                    else
+                        ClearReadingPane();
+                    UpdateHelpBar();
+                    UpdateToolbar();
+                }
             }
             e.Handled = true;
         }
@@ -2145,7 +2185,7 @@ public class CXPostApp : IDisposable
         {
             _ = Task.Run(async () =>
             {
-                var dialog = new SettingsDialog(_config, _configService, _credentialService, _ws);
+                var dialog = new SettingsDialog(_config, _configService, _credentialService, _cacheService, _ws);
                 var changed = await dialog.ShowAsync(_ws);
                 if (changed)
                 {

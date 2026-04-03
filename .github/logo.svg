@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 140">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e2840;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0a0a14;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00a8cc;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="600" height="140" rx="16" fill="url(#bg)" />
+
+  <!-- Border -->
+  <rect x="1" y="1" width="598" height="138" rx="15" fill="none" stroke="#2a3550" stroke-width="1.5" />
+
+  <!-- Envelope icon -->
+  <g transform="translate(40, 35)">
+    <!-- Envelope body -->
+    <rect x="0" y="15" width="60" height="42" rx="4" fill="none" stroke="url(#accent)" stroke-width="2.5" />
+    <!-- Envelope flap -->
+    <polyline points="0,15 30,40 60,15" fill="none" stroke="url(#accent)" stroke-width="2.5" stroke-linejoin="round" />
+    <!-- Small lines suggesting text -->
+    <line x1="14" y1="44" x2="46" y2="44" stroke="#00d4ff" stroke-width="1.5" opacity="0.4" />
+    <line x1="18" y1="49" x2="42" y2="49" stroke="#00d4ff" stroke-width="1.5" opacity="0.3" />
+  </g>
+
+  <!-- CXPost text -->
+  <text x="120" y="82" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace" font-size="52" font-weight="700" letter-spacing="2">
+    <tspan fill="url(#accent)">CX</tspan><tspan fill="#e8e8e8">Post</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="122" y="108" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace" font-size="14" fill="#6a7a9a" letter-spacing="3">
+    TERMINAL EMAIL CLIENT
+  </text>
+
+  <!-- Terminal cursor blink -->
+  <rect x="385" y="62" width="3" height="28" fill="#00d4ff" opacity="0.7">
+    <animate attributeName="opacity" values="0.7;0;0.7" dur="1.2s" repeatCount="indefinite" />
+  </rect>
+
+  <!-- Decorative dots (like terminal status) -->
+  <circle cx="540" cy="40" r="4" fill="#ff5f56" opacity="0.8" />
+  <circle cx="556" cy="40" r="4" fill="#ffbd2e" opacity="0.8" />
+  <circle cx="572" cy="40" r="4" fill="#27c93f" opacity="0.8" />
+</svg>

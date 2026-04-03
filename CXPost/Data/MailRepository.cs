@@ -16,13 +16,14 @@ public class MailRepository
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO folders (account_id, path, display_name, uidvalidity, unread_count, total_count)
-            VALUES (@accountId, @path, @displayName, @uidvalidity, @unreadCount, @totalCount)
+            INSERT INTO folders (account_id, path, display_name, uidvalidity, unread_count, total_count, folder_type)
+            VALUES (@accountId, @path, @displayName, @uidvalidity, @unreadCount, @totalCount, @folderType)
             ON CONFLICT(account_id, path) DO UPDATE SET
                 display_name = @displayName,
                 uidvalidity = @uidvalidity,
                 unread_count = @unreadCount,
-                total_count = @totalCount
+                total_count = @totalCount,
+                folder_type = @folderType
             """;
         cmd.Parameters.AddWithValue("@accountId", folder.AccountId);
         cmd.Parameters.AddWithValue("@path", folder.Path);
@@ -30,13 +31,14 @@ public class MailRepository
         cmd.Parameters.AddWithValue("@uidvalidity", folder.UidValidity);
         cmd.Parameters.AddWithValue("@unreadCount", folder.UnreadCount);
         cmd.Parameters.AddWithValue("@totalCount", folder.TotalCount);
+        cmd.Parameters.AddWithValue("@folderType", (int)folder.FolderType);
         cmd.ExecuteNonQuery();
     }
 
     public List<MailFolder> GetFolders(string accountId)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT id, account_id, path, display_name, uidvalidity, unread_count, total_count FROM folders WHERE account_id = @accountId";
+        cmd.CommandText = "SELECT id, account_id, path, display_name, uidvalidity, unread_count, total_count, folder_type FROM folders WHERE account_id = @accountId";
         cmd.Parameters.AddWithValue("@accountId", accountId);
 
         var folders = new List<MailFolder>();
@@ -51,7 +53,8 @@ public class MailRepository
                 DisplayName = reader.GetString(3),
                 UidValidity = (uint)reader.GetInt64(4),
                 UnreadCount = reader.GetInt32(5),
-                TotalCount = reader.GetInt32(6)
+                TotalCount = reader.GetInt32(6),
+                FolderType = reader.FieldCount > 7 ? (FolderType)reader.GetInt32(7) : FolderType.Other
             });
         }
         return folders;
