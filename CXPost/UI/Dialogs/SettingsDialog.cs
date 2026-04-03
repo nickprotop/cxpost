@@ -11,10 +11,6 @@ using CXPost.UI.Components;
 
 namespace CXPost.UI.Dialogs;
 
-/// <summary>
-/// Tabbed settings dialog: Accounts, Appearance, Behavior, About.
-/// Returns true if any changes were made (caller should refresh).
-/// </summary>
 public class SettingsDialog : DialogBase<bool>
 {
     private readonly CXPostConfig _config;
@@ -23,6 +19,7 @@ public class SettingsDialog : DialogBase<bool>
     private readonly ICacheService _cacheService;
     private readonly ConsoleWindowSystem _windowSystem;
     private bool _changed;
+    private int _activeTabIndex;
 
     // Accounts tab
     private ListControl? _accountList;
@@ -35,6 +32,12 @@ public class SettingsDialog : DialogBase<bool>
     private CheckboxControl? _notificationsCheckbox;
     private DropdownControl? _startupViewDropdown;
     private CheckboxControl? _confirmQuitCheckbox;
+
+    // Tab-aware toolbar buttons
+    private ButtonControl? _editButton;
+    private ButtonControl? _addButton;
+    private ButtonControl? _deleteButton;
+    private ButtonControl? _saveButton;
 
     public SettingsDialog(
         CXPostConfig config,
@@ -58,7 +61,6 @@ public class SettingsDialog : DialogBase<bool>
 
     protected override void BuildContent()
     {
-        // Header
         Modal.AddControl(Controls.Markup()
             .AddLine("[cyan1 bold]\u2699  Settings[/]")
             .WithMargin(2, 1, 2, 0)
@@ -67,7 +69,6 @@ public class SettingsDialog : DialogBase<bool>
         Modal.AddControl(Controls.RuleBuilder().WithColor(Color.Grey23)
             .WithMargin(2, 1, 2, 0).Build());
 
-        // Tab control
         var tabControl = Controls.TabControl()
             .AddTab("Accounts", BuildAccountsTab())
             .AddTab("Appearance", BuildAppearanceTab())
@@ -79,39 +80,70 @@ public class SettingsDialog : DialogBase<bool>
             .WithMargin(2, 1, 2, 0)
             .Fill()
             .Build();
+
+        tabControl.TabChanged += (_, e) =>
+        {
+            _activeTabIndex = e.NewIndex;
+            UpdateToolbarVisibility();
+        };
+
         Modal.AddControl(tabControl);
 
         // Bottom toolbar
         Modal.AddControl(Controls.RuleBuilder().WithColor(Color.Grey23)
             .StickyBottom().WithMargin(2, 0, 2, 0).Build());
 
+        _editButton = Controls.Button("[grey93]Edit [cyan1](Enter)[/][/]")
+            .WithBackgroundColor(Color.Transparent)
+            .WithFocusedBackgroundColor(Color.Grey50)
+            .OnClick((s, e) => _ = EditSelectedAsync()).Build();
+
+        _addButton = Controls.Button("[grey93]Add [cyan1](A)[/][/]")
+            .WithBackgroundColor(Color.Transparent)
+            .WithFocusedBackgroundColor(Color.DarkGreen)
+            .OnClick((s, e) => _ = AddAccountAsync()).Build();
+
+        _deleteButton = Controls.Button("[grey93]Delete [cyan1](D)[/][/]")
+            .WithBackgroundColor(Color.Transparent)
+            .WithFocusedBackgroundColor(Color.DarkRed)
+            .OnClick((s, e) => _ = DeleteSelectedAsync()).Build();
+
+        _saveButton = Controls.Button("[grey93]Save [cyan1](S)[/][/]")
+            .WithBackgroundColor(Color.Transparent)
+            .WithFocusedBackgroundColor(Color.DarkGreen)
+            .OnClick((s, e) => SaveGlobalSettings()).Build();
+
+        var closeButton = Controls.Button("[grey93]Close [cyan1](Esc)[/][/]")
+            .WithBackgroundColor(Color.Transparent)
+            .OnClick((s, e) => CloseWithResult(_changed)).Build();
+
         var toolbar = Controls.Toolbar()
-            .AddButton(Controls.Button("[grey93]Edit [cyan1](Enter)[/][/]")
-                .WithBackgroundColor(Color.Transparent)
-                .WithFocusedBackgroundColor(Color.Grey50)
-                .OnClick((s, e) => _ = EditSelectedAsync()).Build())
-            .AddButton(Controls.Button("[grey93]Add [cyan1](A)[/][/]")
-                .WithBackgroundColor(Color.Transparent)
-                .WithFocusedBackgroundColor(Color.DarkGreen)
-                .OnClick((s, e) => _ = AddAccountAsync()).Build())
-            .AddButton(Controls.Button("[grey93]Delete [cyan1](D)[/][/]")
-                .WithBackgroundColor(Color.Transparent)
-                .WithFocusedBackgroundColor(Color.DarkRed)
-                .OnClick((s, e) => DeleteSelected()).Build())
+            .AddButton(_editButton)
+            .AddButton(_addButton)
+            .AddButton(_deleteButton)
             .AddSeparator(1)
-            .AddButton(Controls.Button("[grey93]Save [cyan1](S)[/][/]")
-                .WithBackgroundColor(Color.Transparent)
-                .WithFocusedBackgroundColor(Color.DarkGreen)
-                .OnClick((s, e) => SaveGlobalSettings()).Build())
-            .AddButton(Controls.Button("[grey93]Close [cyan1](Esc)[/][/]")
-                .WithBackgroundColor(Color.Transparent)
-                .OnClick((s, e) => CloseWithResult(_changed)).Build())
+            .AddButton(_saveButton)
+            .AddButton(closeButton)
             .WithSpacing(1)
             .WithAlignment(HorizontalAlignment.Center)
             .StickyBottom()
             .WithMargin(2, 0, 2, 0)
             .Build();
         Modal.AddControl(toolbar);
+
+        // Initial visibility
+        UpdateToolbarVisibility();
+    }
+
+    private void UpdateToolbarVisibility()
+    {
+        var isAccountsTab = _activeTabIndex == 0;
+        var isSettingsTab = _activeTabIndex == 1 || _activeTabIndex == 2;
+
+        if (_editButton != null) _editButton.Visible = isAccountsTab;
+        if (_addButton != null) _addButton.Visible = isAccountsTab;
+        if (_deleteButton != null) _deleteButton.Visible = isAccountsTab;
+        if (_saveButton != null) _saveButton.Visible = isSettingsTab;
     }
 
     // ── Accounts Tab ────────────────────────────────────────────────────
@@ -289,7 +321,6 @@ public class SettingsDialog : DialogBase<bool>
 
     private void SaveGlobalSettings()
     {
-        // Layout
         _config.Layout = _layoutDropdown?.SelectedIndex switch
         {
             0 => "last",
@@ -297,7 +328,6 @@ public class SettingsDialog : DialogBase<bool>
             _ => "classic"
         };
 
-        // Behavior
         _config.SyncIntervalSeconds = int.TryParse(_syncIntervalField?.Input, out var si) ? si : 300;
         _config.Notifications = _notificationsCheckbox?.Checked ?? true;
         _config.ConfirmQuit = _confirmQuitCheckbox?.Checked ?? false;
@@ -305,6 +335,7 @@ public class SettingsDialog : DialogBase<bool>
 
         _configService.Save(_config);
         _changed = true;
+        CloseWithResult(true);
     }
 
     // ── Account Management ──────────────────────────────────────────────
@@ -370,59 +401,65 @@ public class SettingsDialog : DialogBase<bool>
         _windowSystem.SetActiveWindow(Modal);
     }
 
-    private void DeleteSelected()
+    private async Task DeleteSelectedAsync()
     {
         var idx = _accountList?.SelectedIndex ?? -1;
         if (idx < 0 || idx >= _config.Accounts.Count) return;
 
         var account = _config.Accounts[idx];
-
-        _ = Task.Run(async () =>
+        var dialog = new ConfirmDialog(
+            "Delete Account",
+            $"Delete account \"{account.Name}\" ({account.Email})? All cached data will be removed.");
+        var confirmed = await dialog.ShowAsync(_windowSystem);
+        if (confirmed)
         {
-            var dialog = new ConfirmDialog(
-                "Delete Account",
-                $"Delete account \"{account.Name}\" ({account.Email})? All cached data will be removed.");
-            var confirmed = await dialog.ShowAsync(_windowSystem);
-            if (confirmed)
-            {
-                _credentialService.DeletePassword(account.Id);
-                _config.Accounts.RemoveAt(idx);
-                _configService.Save(_config);
-                _changed = true;
-                RefreshAccountList();
-            }
-            _windowSystem.SetActiveWindow(Modal);
-        });
+            _credentialService.DeletePassword(account.Id);
+            _config.Accounts.RemoveAt(idx);
+            _configService.Save(_config);
+            _changed = true;
+            RefreshAccountList();
+        }
+        _windowSystem.SetActiveWindow(Modal);
     }
 
-    // ── Key Handling ────────────────────────────────────────────────────
+    // ── Key Handling (tab-aware) ────────────────────────────────────────
 
     protected override void SetInitialFocus() => _accountList?.RequestFocus();
 
     protected override void OnKeyPressed(object? sender, KeyPressedEventArgs e)
     {
-        switch (e.KeyInfo.Key)
+        if (_activeTabIndex == 0)
         {
-            case ConsoleKey.Enter:
-                _ = EditSelectedAsync();
-                e.Handled = true;
-                break;
-            case ConsoleKey.A:
-                _ = AddAccountAsync();
-                e.Handled = true;
-                break;
-            case ConsoleKey.D:
-            case ConsoleKey.Delete:
-                DeleteSelected();
-                e.Handled = true;
-                break;
-            case ConsoleKey.S:
+            // Account-specific keys only on Accounts tab
+            switch (e.KeyInfo.Key)
+            {
+                case ConsoleKey.Enter:
+                    _ = EditSelectedAsync();
+                    e.Handled = true;
+                    return;
+                case ConsoleKey.A:
+                    _ = AddAccountAsync();
+                    e.Handled = true;
+                    return;
+                case ConsoleKey.D:
+                case ConsoleKey.Delete:
+                    _ = DeleteSelectedAsync();
+                    e.Handled = true;
+                    return;
+            }
+        }
+
+        if (_activeTabIndex == 1 || _activeTabIndex == 2)
+        {
+            // Save key only on Appearance/Behavior tabs
+            if (e.KeyInfo.Key == ConsoleKey.S && _syncIntervalField?.HasFocus != true)
+            {
                 SaveGlobalSettings();
                 e.Handled = true;
-                break;
-            default:
-                base.OnKeyPressed(sender, e);
-                break;
+                return;
+            }
         }
+
+        base.OnKeyPressed(sender, e);
     }
 }

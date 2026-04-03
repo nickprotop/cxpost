@@ -136,7 +136,8 @@ public class MailSyncCoordinator
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
-                if (account.NotificationsEnabled)
+                var globalNotify = _configService.Load().Notifications;
+                if (globalNotify && account.NotificationsEnabled)
                     _notifications.NotifySyncComplete(account.Name, totalMessages);
             });
         }

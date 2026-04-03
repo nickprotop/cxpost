@@ -120,7 +120,9 @@ public class CXPostApp : IDisposable
         _statusBar = new Components.StatusBarBuilder();
         _helpBar = new Components.HelpBar(marginLeft: 1);
         _config = configService.Load();
-        _currentLayout = _config.Layout;
+        _currentLayout = _config.Layout == "last"
+            ? (_config.LastLayout is "classic" or "wide" ? _config.LastLayout : "classic")
+            : (_config.Layout is "classic" or "wide" ? _config.Layout : "classic");
     }
 
     public void Run()
@@ -303,17 +305,52 @@ public class CXPostApp : IDisposable
         // Reading pane fade-in overlay: dims just the reading pane area, then animates away
         _mainWindow.PostBufferPaint += ReadingPaneFadeOverlay;
 
+        // Confirm before quit
+        _mainWindow.OnClosing += (_, args) =>
+        {
+            if (args.Force || !_config.ConfirmQuit) return;
+            args.Allow = false;
+            _ = Task.Run(async () =>
+            {
+                var dialog = new ConfirmDialog("Quit CXPost", "Are you sure you want to quit?");
+                var confirmed = await dialog.ShowAsync(_ws);
+                if (confirmed)
+                    _mainWindow.Close(force: true);
+            });
+        };
+
         _ws.AddWindow(_mainWindow);
         _ws.SetActiveWindow(_mainWindow);
 
         // Populate folder tree with cached data
         PopulateFolderTree();
 
-        // Show "All Accounts" dashboard on startup
-        ShowDashboardView(
-            Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService, GetDashboardActions()));
-        _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
-        SetRightPanelHeader("[grey70]Dashboard[/]");
+        // Startup view
+        if (_config.StartupView == "last" && !string.IsNullOrEmpty(_config.LastFolderPath))
+        {
+            // Try to restore last used folder
+            var lastFolder = _config.Accounts
+                .SelectMany(a => _cacheService.GetFolders(a.Id))
+                .FirstOrDefault(f => f.Path == _config.LastFolderPath);
+            if (lastFolder != null)
+            {
+                NavigateToFolder(lastFolder.Id);
+            }
+            else
+            {
+                ShowDashboardView(
+                    Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService, GetDashboardActions()));
+                _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
+                SetRightPanelHeader("[grey70]Dashboard[/]");
+            }
+        }
+        else
+        {
+            ShowDashboardView(
+                Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService, GetDashboardActions()));
+            _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
+            SetRightPanelHeader("[grey70]Dashboard[/]");
+        }
 
         // Update initial status
         _statusBar.UpdateConnectionStatus(0, false);
@@ -547,7 +584,10 @@ public class CXPostApp : IDisposable
                 {
                     try
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(capturedAccount.SyncIntervalSeconds), loopCts.Token);
+                        var syncInterval = capturedAccount.SyncIntervalSeconds > 0
+                            ? capturedAccount.SyncIntervalSeconds
+                            : _config.SyncIntervalSeconds;
+                        await Task.Delay(TimeSpan.FromSeconds(syncInterval), loopCts.Token);
                         await _syncCoordinator.SyncAccountAsync(capturedAccount, loopCts.Token);
                         EnqueueUiAction(() => _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), true));
                     }
@@ -887,6 +927,10 @@ public class CXPostApp : IDisposable
             _aggregatedFolderIds = null;
             var folder = FindFolderById(ft.FolderId);
             if (folder == null) return;
+
+            // Persist last used folder for startup restore
+            _config.LastFolderPath = folder.Path;
+            _configService.Save(_config);
 
             ShowMessageListView();
             _messageListCoordinator.SelectFolder(folder);
@@ -2168,7 +2212,10 @@ public class CXPostApp : IDisposable
         {
             var isDashboard = _dashboardPanel?.Visible == true;
             _currentLayout = _currentLayout == "classic" ? "wide" : "classic";
-            _config.Layout = _currentLayout;
+            // Preserve "last" preference — only update LastLayout, not Layout
+            _config.LastLayout = _currentLayout;
+            if (_config.Layout != "last")
+                _config.Layout = _currentLayout;
             _configService.Save(_config);
             RebuildMainGrid();
 

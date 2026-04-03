@@ -53,4 +53,6 @@ public class CXPostConfig
     public bool Notifications { get; set; } = true;
     public string StartupView { get; set; } = "dashboard";
     public bool ConfirmQuit { get; set; } = false;
+    public string LastLayout { get; set; } = "classic";
+    public string? LastFolderPath { get; set; }
 }
