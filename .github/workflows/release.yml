@@ -31,13 +31,15 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
 
+      - name: Restore
+        run: dotnet restore CXPost/CXPost.csproj -r ${{ matrix.rid }}
+
       - name: Build
         run: |
           dotnet publish CXPost/CXPost.csproj -c Release \
             -r ${{ matrix.rid }} \
             --self-contained true \
             -p:PublishSingleFile=true \
-            -p:PublishTrimmed=true \
             -p:Version=${{ steps.version.outputs.VERSION }} \
             -o ./publish/${{ matrix.rid }}
 
