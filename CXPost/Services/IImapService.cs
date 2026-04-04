@@ -22,4 +22,6 @@ public interface IImapService
     Task<uint> GetUidValidityAsync(string folderPath, CancellationToken ct = default);
     Task<HashSet<uint>> GetUidsAsync(string folderPath, CancellationToken ct = default);
     Task SaveAttachmentAsync(string folderPath, uint uid, int attachmentIndex, string targetPath, CancellationToken ct = default);
+    Task<List<(string TempPath, string FileName, long Size)>> FetchAttachmentsToTempAsync(
+        string folderPath, uint uid, string tempDir, CancellationToken ct = default);
 }

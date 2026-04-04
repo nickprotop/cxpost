@@ -361,6 +361,39 @@ public class ImapService : IImapService, IDisposable
         }
     }
 
+    public async Task<List<(string TempPath, string FileName, long Size)>> FetchAttachmentsToTempAsync(
+        string folderPath, uint uid, string tempDir, CancellationToken ct = default)
+    {
+        EnsureConnected();
+
+        var folder = await _client!.GetFolderAsync(folderPath, ct);
+        await folder.OpenAsync(FolderAccess.ReadOnly, ct);
+
+        var message = await folder.GetMessageAsync(new UniqueId(uid), ct);
+        var results = new List<(string TempPath, string FileName, long Size)>();
+
+        var parts = message.BodyParts.OfType<MimePart>()
+            .Where(p => p.Content != null && !string.IsNullOrEmpty(p.FileName))
+            .ToList();
+
+        if (!Directory.Exists(tempDir))
+            Directory.CreateDirectory(tempDir);
+
+        foreach (var part in parts)
+        {
+            var fileName = part.FileName ?? $"attachment-{results.Count}";
+            var targetPath = GetUniqueFilePath(Path.Combine(tempDir, fileName));
+
+            using var stream = File.Create(targetPath);
+            await part.Content.DecodeToAsync(stream, ct);
+            await stream.FlushAsync(ct);
+
+            results.Add((targetPath, fileName, new FileInfo(targetPath).Length));
+        }
+
+        return results;
+    }
+
     private static string GetUniqueFilePath(string path)
     {
         if (!File.Exists(path)) return path;
