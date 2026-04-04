@@ -45,12 +45,13 @@ public class MessageListCoordinator
     public void RefreshMessageList()
     {
         if (CurrentFolder == null) return;
+        if (_app.Value.IsSearchActive) return;
         var folderId = CurrentFolder.Id;
         var messages = _cache.GetMessages(folderId);
         _app.Value.EnqueueUiAction(() =>
         {
-            // Only apply if this folder is still selected (prevents stale queued updates)
-            if (CurrentFolder?.Id == folderId)
+            // Only apply if this folder is still selected and not in search (prevents stale queued updates)
+            if (CurrentFolder?.Id == folderId && !_app.Value.IsSearchActive)
                 _app.Value.PopulateMessageList(messages);
         });
     }

@@ -89,6 +89,7 @@ public class CXPostApp : IDisposable
 
     // Search state
     private bool _isSearchActive;
+    public bool IsSearchActive => _isSearchActive;
     private string? _activeSearchQuery;
     private readonly List<string> _recentSearches = [];
     private readonly object _searchLock = new();
@@ -1335,7 +1336,7 @@ public class CXPostApp : IDisposable
         if (_messageTable == null) return;
 
         // Determine folder ID from messages
-        var folderId = messages.Count > 0 ? messages[0].FolderId : 0;
+        var folderId = messages.Count > 0 ? messages[0].FolderId : _populatedFolderId;
         var folderChanged = folderId != _populatedFolderId;
 
         ImapLogger.Debug($"PopulateMessageList: {messages.Count} messages, current rows={_messageTable.RowCount}, folder={folderId}, changed={folderChanged}");
