@@ -100,6 +100,50 @@ public static class MessageFormatter
         return $"{prefix} {subject}";
     }
 
+    public static string GetBulkForwardSubject(List<MailMessage> messages, string prefix = "Fwd:")
+    {
+        if (messages.Count == 0) return $"{prefix} ";
+
+        var subjects = messages.Select(m => m.Subject ?? "").Distinct().ToList();
+        if (subjects.Count == 1)
+            return GetForwardSubject(subjects[0], prefix);
+
+        var first = messages[0].Subject ?? "(no subject)";
+        var remaining = messages.Count - 1;
+        if (first.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return $"{first} (+{remaining} more)";
+        return $"{prefix} {first} (+{remaining} more)";
+    }
+
+    public static string FormatBulkForwardBody(string intro, List<MailMessage> messages)
+    {
+        var lines = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(intro))
+        {
+            lines.Add(intro);
+            lines.Add("");
+        }
+
+        foreach (var msg in messages)
+        {
+            lines.Add("---------- Forwarded message ----------");
+            lines.Add($"From: {msg.FromName ?? ""} <{msg.FromAddress}>");
+            lines.Add($"Date: {msg.Date:MMMM d, yyyy h:mm tt}");
+            lines.Add($"Subject: {msg.Subject}");
+            lines.Add($"To: {FormatAddresses(msg.ToAddresses)}");
+            lines.Add("");
+
+            var body = GetPlainTextBody(msg.BodyPlain);
+            if (body != null)
+                lines.Add(body);
+
+            lines.Add("");
+        }
+
+        return string.Join('\n', lines);
+    }
+
     public static string GetFolderIcon(FolderType type) => type switch
     {
         FolderType.Inbox => "\U0001f4e5",
