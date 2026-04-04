@@ -1586,7 +1586,7 @@ public class CXPostApp : IDisposable
             _readingPane.AddControl(loading);
         }
 
-        if (!_isSearchActive && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
+        if (!_isSearchActive && GetCheckedCount() == 0 && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
             SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]");
     }
 

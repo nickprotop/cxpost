@@ -47,9 +47,10 @@ public class StatusBarBuilder
 
     public void UpdateConnectionStatus(int unreadCount, bool connected)
     {
+        var time = DateTime.Now.ToString("h:mm tt");
         var status = connected
-            ? $"[{ColorScheme.FlaggedMarkup}]{unreadCount} unread[/] [grey50]|[/] [{ColorScheme.SuccessMarkup}]\u25cf Connected[/]"
-            : $"[{ColorScheme.ErrorMarkup}]\u25cf Offline[/]";
+            ? $"[{ColorScheme.FlaggedMarkup}]{unreadCount} unread[/] [grey50]|[/] [{ColorScheme.SuccessMarkup}]\u25cf Connected[/] [grey50]|[/] [grey70]{time}[/]"
+            : $"[{ColorScheme.ErrorMarkup}]\u25cf Offline[/] [grey50]|[/] [grey70]{time}[/]";
         _topRight.SetContent([status]);
     }
 
