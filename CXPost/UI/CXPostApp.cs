@@ -536,6 +536,7 @@ public class CXPostApp : IDisposable
             _helpBar.Add("Ctrl+U", $"Read ({checkedCount})", () => SimulateKey(ConsoleKey.U, ctrl: true));
             _helpBar.Add("Ctrl+D", $"Flag ({checkedCount})", () => SimulateKey(ConsoleKey.D, ctrl: true));
             _helpBar.Add("Ctrl+M", $"Move ({checkedCount})", () => SimulateKey(ConsoleKey.M, ctrl: true));
+            _helpBar.Add("Ctrl+F", $"Forward ({checkedCount})", () => SimulateKey(ConsoleKey.F, ctrl: true));
             _helpBar.Add("Esc", "Clear", () => ClearSelection());
         }
         else
