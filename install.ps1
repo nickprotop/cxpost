@@ -44,6 +44,11 @@ Write-Host "Downloading $binary..."
 $outputPath = Join-Path $installDir "cxpost.exe"
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $outputPath
 
+# Download uninstaller
+$uninstallUrl = "https://raw.githubusercontent.com/$repo/main/cxpost-uninstall.ps1"
+$uninstallPath = Join-Path $installDir "cxpost-uninstall.ps1"
+Invoke-WebRequest -Uri $uninstallUrl -OutFile $uninstallPath
+
 # Add to PATH if not already there
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$installDir*") {
@@ -60,6 +65,6 @@ Write-Host "  Binary:  $outputPath"
 Write-Host "  Config:  $configDir\"
 Write-Host ""
 Write-Host "  Run:     cxpost"
-Write-Host "  Remove:  Remove-Item '$installDir' -Recurse"
+Write-Host "  Remove:  cxpost-uninstall.ps1"
 Write-Host ""
 Write-Host "  Note: Restart your terminal for PATH changes to take effect." -ForegroundColor Yellow

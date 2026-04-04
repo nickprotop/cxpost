@@ -92,7 +92,7 @@ jobs:
           cp install.sh release/
           cp install.ps1 release/
           cp uninstall.sh release/
-          cp uninstall.ps1 release/
+          cp cxpost-uninstall.ps1 release/
           chmod +x release/cxpost-linux-* release/cxpost-osx-* release/*.sh 2>/dev/null || true
 
           # Generate checksums
