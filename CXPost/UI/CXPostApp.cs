@@ -1335,6 +1335,65 @@ public class CXPostApp : IDisposable
     {
         if (_messageTable == null) return;
 
+        // During search: results span multiple folders — use FolderId+Uid as composite key
+        // for in-place updates instead of clearing and rebuilding
+        if (_isSearchActive)
+        {
+            ImapLogger.Debug($"PopulateMessageList (search): {messages.Count} messages");
+
+            var incomingKeys = new HashSet<(int FolderId, uint Uid)>(
+                messages.Select(m => (m.FolderId, m.Uid)));
+
+            // Remove rows no longer in the result set (reverse to keep indices stable)
+            for (var i = _messageTable.RowCount - 1; i >= 0; i--)
+            {
+                var row = _messageTable.GetRow(i);
+                if (row.Tag is MailMessage m && !incomingKeys.Contains((m.FolderId, m.Uid)))
+                    _messageTable.RemoveRow(i);
+            }
+
+            // Build lookup of existing rows by composite key
+            var searchExisting = new Dictionary<(int, uint), int>();
+            for (var i = 0; i < _messageTable.RowCount; i++)
+            {
+                var row = _messageTable.GetRow(i);
+                if (row.Tag is MailMessage m)
+                    searchExisting[(m.FolderId, m.Uid)] = i;
+            }
+
+            // Update existing rows in-place, insert new ones
+            for (var i = 0; i < messages.Count; i++)
+            {
+                var msg = messages[i];
+                var (star, clip, from, subject, date) = FormatMessageRow(msg);
+                var key = (msg.FolderId, msg.Uid);
+
+                if (searchExisting.TryGetValue(key, out var rowIdx))
+                {
+                    _messageTable.UpdateCell(rowIdx, 0, star);
+                    _messageTable.UpdateCell(rowIdx, 1, clip);
+                    _messageTable.UpdateCell(rowIdx, 2, from);
+                    _messageTable.UpdateCell(rowIdx, 3, subject);
+                    _messageTable.UpdateCell(rowIdx, 4, date);
+                    _messageTable.GetRow(rowIdx).Tag = msg;
+                }
+                else
+                {
+                    var row = new TableRow(star, clip, from, subject, date) { Tag = msg };
+                    _messageTable.InsertRow(i, row);
+
+                    searchExisting.Clear();
+                    for (var j = 0; j < _messageTable.RowCount; j++)
+                    {
+                        var r = _messageTable.GetRow(j);
+                        if (r.Tag is MailMessage rm)
+                            searchExisting[(rm.FolderId, rm.Uid)] = j;
+                    }
+                }
+            }
+            return;
+        }
+
         // Determine folder ID from messages
         var folderId = messages.Count > 0 ? messages[0].FolderId : _populatedFolderId;
         var folderChanged = folderId != _populatedFolderId;
@@ -1878,6 +1937,19 @@ public class CXPostApp : IDisposable
         if (idx < 0) return null;
         var row = _messageTable.GetRow(idx);
         return row?.Tag as MailMessage;
+    }
+
+    public List<MailMessage> GetDisplayedMessages()
+    {
+        if (_messageTable == null) return [];
+        var messages = new List<MailMessage>();
+        for (var i = 0; i < _messageTable.RowCount; i++)
+        {
+            var row = _messageTable.GetRow(i);
+            if (row.Tag is MailMessage msg)
+                messages.Add(msg);
+        }
+        return messages;
     }
 
     private List<MailMessage> GetCheckedMessages()

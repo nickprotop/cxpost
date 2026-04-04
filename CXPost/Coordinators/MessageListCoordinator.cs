@@ -45,7 +45,28 @@ public class MessageListCoordinator
     public void RefreshMessageList()
     {
         if (CurrentFolder == null) return;
-        if (_app.Value.IsSearchActive) return;
+
+        if (_app.Value.IsSearchActive)
+        {
+            // During search: refresh only the currently displayed rows
+            // Re-fetch displayed messages from cache to pick up flag/read changes and remove deleted ones
+            _app.Value.EnqueueUiAction(() =>
+            {
+                if (!_app.Value.IsSearchActive) return;
+                var displayed = _app.Value.GetDisplayedMessages();
+                var refreshed = new List<MailMessage>();
+                foreach (var msg in displayed)
+                {
+                    var cached = _cache.GetMessages(msg.FolderId)
+                        .FirstOrDefault(m => m.Uid == msg.Uid);
+                    if (cached != null)
+                        refreshed.Add(cached);
+                }
+                _app.Value.PopulateMessageList(refreshed);
+            });
+            return;
+        }
+
         var folderId = CurrentFolder.Id;
         var messages = _cache.GetMessages(folderId);
         _app.Value.EnqueueUiAction(() =>
