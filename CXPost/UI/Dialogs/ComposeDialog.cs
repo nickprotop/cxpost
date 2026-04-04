@@ -18,7 +18,8 @@ public record ComposeResult(
     string? Cc,
     string Subject,
     string Body,
-    List<string> AttachmentPaths);
+    List<string> AttachmentPaths,
+    bool IncludeOriginalAttachments);
 
 public class ComposeDialog : DialogBase<ComposeResult?>
 {
@@ -40,6 +41,9 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     private readonly List<string> _attachmentPaths = [];
     private readonly object _attachmentLock = new();
     private ScrollablePanelControl? _attachmentPanel;
+    private readonly bool _isForwardMode;
+    private readonly List<Models.AttachmentInfo>? _originalAttachments;
+    private CheckboxControl? _includeOriginalAttachments;
 
     public ComposeDialog(
         IContactsService contacts,
@@ -48,7 +52,9 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         string to = "",
         string cc = "",
         string subject = "",
-        string body = "")
+        string body = "",
+        bool isForwardMode = false,
+        List<Models.AttachmentInfo>? originalAttachments = null)
     {
         _contacts = contacts;
         _accounts = accounts;
@@ -59,6 +65,8 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         _initialCc = cc;
         _initialSubject = subject;
         _initialBody = body;
+        _isForwardMode = isForwardMode;
+        _originalAttachments = originalAttachments;
     }
 
     private Models.Account? SelectedAccount =>
@@ -144,6 +152,18 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         _attachmentPanel.Visible = false;
         Modal.AddControl(_attachmentPanel);
 
+        // ── Forward attachment toggle (only in forward mode) ────────────
+        if (_isForwardMode && _originalAttachments != null && _originalAttachments.Count > 0)
+        {
+            var totalSize = _originalAttachments.Sum(a => a.Size);
+            var sizeStr = FormatFileSize(totalSize);
+            _includeOriginalAttachments = Controls.Checkbox($"Include original attachments ({_originalAttachments.Count}, {sizeStr})")
+                .Checked(true)
+                .WithMargin(2, 1, 2, 0)
+                .Build();
+            Modal.AddControl(_includeOriginalAttachments);
+        }
+
         // ── Body separator ──────────────────────────────────────────────
         Modal.AddControl(Controls.RuleBuilder().WithColor(Color.Grey23)
             .WithMargin(2, 1, 2, 0).Build());
@@ -209,7 +229,8 @@ public class ComposeDialog : DialogBase<ComposeResult?>
             Cc: string.IsNullOrWhiteSpace(_ccField?.Input) ? null : _ccField.Input,
             Subject: _subjectField?.Input ?? "",
             Body: _bodyEditor?.Content ?? "",
-            AttachmentPaths: new List<string>(_attachmentPaths)));
+            AttachmentPaths: new List<string>(_attachmentPaths),
+            IncludeOriginalAttachments: _includeOriginalAttachments?.Checked ?? false));
     }
 
     protected override void SetInitialFocus()
