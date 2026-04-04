@@ -30,13 +30,13 @@ public class ComposeCoordinator
         _notifications = notifications;
     }
 
-    public async Task SendAsync(Account account, string to, string? cc, string subject, string body, List<string>? attachmentPaths, CancellationToken ct)
+    public async Task SendAsync(Account account, string fromName, string to, string? cc, string subject, string body, List<string>? attachmentPaths, CancellationToken ct)
     {
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress(account.Name, account.Email));
+        message.From.Add(new MailboxAddress(fromName, account.Email));
 
         if (!string.IsNullOrEmpty(account.ReplyToAddress))
-            message.ReplyTo.Add(new MailboxAddress(account.Name, account.ReplyToAddress));
+            message.ReplyTo.Add(new MailboxAddress(fromName, account.ReplyToAddress));
 
         foreach (var addr in ParseAddresses(to))
             message.To.Add(addr);
@@ -66,10 +66,27 @@ public class ComposeCoordinator
 
         message.Subject = subject;
 
-        // Add signature
+        // Add signature based on position preference
         var bodyWithSig = body;
         if (!string.IsNullOrEmpty(account.Signature))
-            bodyWithSig = body + "\n\n" + account.Signature;
+        {
+            if (account.SignaturePosition == SignaturePosition.AboveQuote)
+            {
+                // Find the quoted reply marker and insert before it
+                var quoteIdx = body.IndexOf("\nOn ", StringComparison.Ordinal);
+                var fwdIdx = body.IndexOf("\n---------- Forwarded", StringComparison.Ordinal);
+                var insertIdx = quoteIdx >= 0 ? quoteIdx : fwdIdx;
+
+                if (insertIdx >= 0)
+                    bodyWithSig = body[..insertIdx] + "\n\n" + account.Signature + body[insertIdx..];
+                else
+                    bodyWithSig = body + "\n\n" + account.Signature;
+            }
+            else
+            {
+                bodyWithSig = body + "\n\n" + account.Signature;
+            }
+        }
 
         if (attachmentPaths != null && attachmentPaths.Count > 0)
         {
@@ -115,22 +132,26 @@ public class ComposeCoordinator
         {
             try { await _smtp.DisconnectAsync(ct); }
             catch { /* best effort */ }
+        }
 
-            // Dispose attachment streams
+        // Copy to Sent folder (before disposing streams — message still needs them)
+        try
+        {
+            var sent = FolderResolver.GetSent(account, _cache);
+            if (sent != null)
+            {
+                using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+                await imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, ct);
+            }
+        }
+        finally
+        {
+            // Dispose attachment streams after Sent copy
             if (message.Body is Multipart mp)
             {
                 foreach (var part in mp.OfType<MimePart>())
                     part.Content?.Stream?.Dispose();
             }
-        }
-
-        // Copy to Sent folder
-        var sent = FolderResolver.GetSent(account, _cache);
-
-        if (sent != null)
-        {
-            using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
-            await imap.AppendMessageAsync(sent.Path, message, MailKit.MessageFlags.Seen, ct);
         }
 
         // Record contacts
@@ -155,14 +176,8 @@ public class ComposeCoordinator
         }
 
         var subject = MessageFormatter.GetReplySubject(original.Subject, account.ReplyPrefix);
-        var quoted = MessageFormatter.FormatQuotedReply(original);
-
-        string body;
-        if (account.SignaturePosition == SignaturePosition.AboveQuote && !string.IsNullOrEmpty(account.Signature))
-            body = "\n\n" + account.Signature + quoted;
-        else
-            body = quoted;
-
+        var body = MessageFormatter.FormatQuotedReply(original);
+        // Signature is added at send time by SendAsync, not here
         return (to, subject, body);
     }
 

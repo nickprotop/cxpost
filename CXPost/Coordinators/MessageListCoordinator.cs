@@ -105,6 +105,113 @@ public class MessageListCoordinator
         await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: newRead, ct: ct);
     }
 
+    // ── Bulk Operations ──────────────────────────────────────────────────
+
+    public async Task ToggleFlagMultipleAsync(List<MailMessage> messages, MailFolder folder, CancellationToken ct)
+    {
+        var account = GetAccountForFolder(folder);
+        if (account == null) return;
+
+        // All to same state — if any unflagged, flag all; otherwise unflag all
+        var newFlag = messages.Any(m => !m.IsFlagged);
+        foreach (var msg in messages)
+        {
+            _cache.UpdateFlags(folder.Id, msg.Uid, msg.IsRead, newFlag);
+            msg.IsFlagged = newFlag;
+        }
+        RefreshMessageList();
+
+        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+        foreach (var msg in messages)
+            await imap.SetFlagsAsync(folder.Path, msg.Uid, isFlagged: newFlag, ct: ct);
+    }
+
+    public async Task ToggleReadMultipleAsync(List<MailMessage> messages, MailFolder folder, CancellationToken ct)
+    {
+        var account = GetAccountForFolder(folder);
+        if (account == null) return;
+
+        var newRead = messages.Any(m => !m.IsRead);
+        foreach (var msg in messages)
+        {
+            _cache.UpdateFlags(folder.Id, msg.Uid, newRead, msg.IsFlagged);
+            msg.IsRead = newRead;
+        }
+        RefreshMessageList();
+
+        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+        foreach (var msg in messages)
+            await imap.SetFlagsAsync(folder.Path, msg.Uid, isRead: newRead, ct: ct);
+    }
+
+    public void DeleteMultipleOptimistic(List<MailMessage> messages, MailFolder folder, CancellationToken ct)
+    {
+        var account = GetAccountForFolder(folder);
+        if (account == null) return;
+
+        foreach (var msg in messages)
+        {
+            _cache.DeleteMessage(folder.Id, msg.Uid);
+            if (SelectedMessage?.Uid == msg.Uid)
+                SelectedMessage = null;
+        }
+        RefreshMessageList();
+
+        var undoCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var undoId = $"undo-delete-bulk-{DateTime.UtcNow.Ticks}";
+        var count = messages.Count;
+
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.ShowUndoNotification(undoId, $"{count} messages moved to Trash", () =>
+            {
+                undoCts.Cancel();
+                foreach (var msg in messages)
+                    _cache.RestoreMessage(folder.Id, msg);
+                _app.Value.EnqueueUiAction(() =>
+                {
+                    RefreshMessageList();
+                    _app.Value.ShowSuccess($"{count} messages restored");
+                });
+            }));
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), undoCts.Token);
+                using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+                var trash = FolderResolver.GetTrash(account, _cache);
+
+                foreach (var msg in messages)
+                {
+                    if (trash != null && folder.Id != trash.Id)
+                        await imap.MoveMessageAsync(folder.Path, trash.Path, msg.Uid, ct);
+                    else
+                        await imap.DeleteMessageAsync(folder.Path, msg.Uid, ct);
+                }
+
+                _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(undoId));
+                undoCts.Dispose();
+            }
+            catch (OperationCanceledException)
+            {
+                undoCts.Dispose();
+            }
+            catch (Exception ex)
+            {
+                foreach (var msg in messages)
+                    _cache.RestoreMessage(folder.Id, msg);
+                _app.Value.EnqueueUiAction(() =>
+                {
+                    RefreshMessageList();
+                    _app.Value.DismissMessage(undoId);
+                    _app.Value.ShowError($"Bulk delete failed: {ex.Message}");
+                });
+                undoCts.Dispose();
+            }
+        }, ct);
+    }
+
     /// <summary>
     /// Optimistic delete: removes from cache/UI immediately, shows undo notification,
     /// then performs IMAP delete after undo window expires.

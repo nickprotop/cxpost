@@ -151,9 +151,25 @@ public class CXPostApp : IDisposable
             .AddColumn("Subject")
             .AddColumn("Date", TextJustification.Right, width: 12)
             .WithSorting()
+            .WithMultiSelect()
             .OnSelectedRowChanged(OnMessageSelected)
             .OnRowActivated(OnMessageActivated)
             .Build();
+        _messageTable.CheckboxMode = true;
+        _messageTable.HoverEnabled = false;
+        _messageTable.MultiSelectionChanged += (_, count) =>
+        {
+            UpdateToolbar();
+            UpdateHelpBar();
+            if (count > 0)
+                SetRightPanelHeader($"[grey70]{count} checked[/]", "Clear");
+            else
+            {
+                var msg = GetSelectedMessage();
+                if (msg != null) UpdatePreviewHeader(msg);
+                else SetRightPanelHeader("[grey70]Messages[/]");
+            }
+        };
 
         _messageTable.HorizontalAlignment = HorizontalAlignment.Stretch;
         _messageTable.VerticalAlignment = VerticalAlignment.Fill;
@@ -435,29 +451,43 @@ public class CXPostApp : IDisposable
 
         var hasMessage = GetSelectedMessage() != null;
         var isDashboard = _dashboardPanel?.Visible == true;
+        var checkedCount = GetCheckedCount();
 
-        // Always available
-        AddToolbarButton("\u2709 Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
-        AddToolbarButton("\u21bb Sync", () => SimulateKey(ConsoleKey.F5));
-        AddToolbarButton("\u2315 Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
-
-        if (!isDashboard && hasMessage)
+        if (checkedCount > 0)
         {
+            // Bulk mode toolbar — actions apply to checked messages
+            AddToolbarButton($"\u2717 Delete ({checkedCount})", () => SimulateKey(ConsoleKey.Delete));
+            AddToolbarButton($"\u2022 Read ({checkedCount})", () => SimulateKey(ConsoleKey.U, ctrl: true));
+            AddToolbarButton($"\u2691 Flag ({checkedCount})", () => SimulateKey(ConsoleKey.D, ctrl: true));
+            AddToolbarButton($"\u2192 Move ({checkedCount})", () => SimulateKey(ConsoleKey.M, ctrl: true));
+            AddToolbarButton($"\u21aa Fwd ({checkedCount})", () => SimulateKey(ConsoleKey.F, ctrl: true));
             _toolbar.AddItem(new SeparatorControl());
-            AddToolbarButton("\u21a9 Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
-            AddToolbarButton("\u21aa Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
-            _toolbar.AddItem(new SeparatorControl());
-            AddToolbarButton("\u2691 Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
-            AddToolbarButton("\u2022 Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
-            AddToolbarButton("\u2192 Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
-            AddToolbarButton("\u2717 Delete", () => SimulateKey(ConsoleKey.Delete));
+            AddToolbarButton("\u2715 Clear", () => ClearSelection());
         }
+        else
+        {
+            // Normal toolbar
+            AddToolbarButton("\u2709 Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
+            AddToolbarButton("\u21bb Sync", () => SimulateKey(ConsoleKey.F5));
+            AddToolbarButton("\u2315 Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
 
-        _toolbar.AddItem(new SeparatorControl());
-        var layoutLabel = _currentLayout == "classic" ? "\u25eb Wide" : "\u2b12 Classic";
-        AddToolbarButton(layoutLabel, () => SimulateKey(ConsoleKey.F8));
+            if (!isDashboard && hasMessage)
+            {
+                _toolbar.AddItem(new SeparatorControl());
+                AddToolbarButton("\u21a9 Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
+                AddToolbarButton("\u21aa Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
+                _toolbar.AddItem(new SeparatorControl());
+                AddToolbarButton("\u2691 Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
+                AddToolbarButton("\u2022 Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
+                AddToolbarButton("\u2192 Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
+                AddToolbarButton("\u2717 Delete", () => SimulateKey(ConsoleKey.Delete));
+            }
 
-        AddToolbarButton("\u2699 Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
+            _toolbar.AddItem(new SeparatorControl());
+            var layoutLabel = _currentLayout == "classic" ? "\u25eb Wide" : "\u2b12 Classic";
+            AddToolbarButton(layoutLabel, () => SimulateKey(ConsoleKey.F8));
+            AddToolbarButton("\u2699 Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
+        }
     }
 
     private void UpdatePreviewHeader(MailMessage? msg = null)
@@ -496,25 +526,38 @@ public class CXPostApp : IDisposable
         _helpBar.Clear();
 
         var hasMessage = GetSelectedMessage() != null;
-        var hasFolder = _messageListCoordinator.CurrentFolder != null;
+        var checkedCount = GetCheckedCount();
 
-        // Inbox / message list context
-        _helpBar.Add("\u2191\u2193", "Navigate");
-        _helpBar.Add("Ctrl+N", "Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
-
-        if (hasMessage)
+        if (checkedCount > 0)
         {
-            _helpBar.Add("Ctrl+R", "Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
-            _helpBar.Add("Ctrl+F", "Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
-            _helpBar.Add("Ctrl+U", "Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
-            _helpBar.Add("Ctrl+D", "Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
-            _helpBar.Add("Del", "Delete", () => SimulateKey(ConsoleKey.Delete));
-            _helpBar.Add("Ctrl+M", "Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
+            // Bulk mode — actions apply to checked messages
+            _helpBar.Add("Space", "Toggle");
+            _helpBar.Add("Del", $"Delete ({checkedCount})", () => SimulateKey(ConsoleKey.Delete));
+            _helpBar.Add("Ctrl+U", $"Read ({checkedCount})", () => SimulateKey(ConsoleKey.U, ctrl: true));
+            _helpBar.Add("Ctrl+D", $"Flag ({checkedCount})", () => SimulateKey(ConsoleKey.D, ctrl: true));
+            _helpBar.Add("Ctrl+M", $"Move ({checkedCount})", () => SimulateKey(ConsoleKey.M, ctrl: true));
+            _helpBar.Add("Esc", "Clear", () => ClearSelection());
         }
+        else
+        {
+            // Normal mode
+            _helpBar.Add("\u2191\u2193", "Navigate");
+            _helpBar.Add("Ctrl+N", "Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
 
-        _helpBar.Add("Ctrl+S", "Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
-        _helpBar.Add("F5", "Sync", () => SimulateKey(ConsoleKey.F5));
-        _helpBar.Add("Ctrl+,", "Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
+            if (hasMessage)
+            {
+                _helpBar.Add("Ctrl+R", "Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
+                _helpBar.Add("Ctrl+F", "Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
+                _helpBar.Add("Ctrl+U", "Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
+                _helpBar.Add("Ctrl+D", "Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
+                _helpBar.Add("Del", "Delete", () => SimulateKey(ConsoleKey.Delete));
+                _helpBar.Add("Ctrl+M", "Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
+            }
+
+            _helpBar.Add("Ctrl+S", "Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
+            _helpBar.Add("F5", "Sync", () => SimulateKey(ConsoleKey.F5));
+            _helpBar.Add("Ctrl+,", "Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
+        }
 
         _statusBar.UpdateHelpBar(_helpBar.Render());
     }
@@ -1415,7 +1458,7 @@ public class CXPostApp : IDisposable
         var row = _messageTable.GetRow(rowIndex);
         if (row?.Tag is not MailMessage msg) return;
 
-        // Show what we have immediately (headers + cached body or "Loading...")
+        // Always show preview for cursor message (checkboxes managed by MultiSelectionChanged event)
         ShowMessagePreview(msg);
         UpdatePreviewHeader(msg);
         UpdateHelpBar();
@@ -1549,8 +1592,13 @@ public class CXPostApp : IDisposable
 
     private void ReadingPaneFadeOverlay(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)
     {
-        if (_readingFadeIntensity <= 0.01f) return;
-        ColorBlendHelper.ApplyColorOverlay(buffer, Color.Black, _readingFadeIntensity, 0.5f);
+        if (_readingFadeIntensity <= 0.01f || _readingPane == null) return;
+
+        // Only dim the reading pane area, not the entire window
+        var paneRect = new LayoutRect(
+            _readingPane.ActualX, _readingPane.ActualY,
+            _readingPane.ActualWidth, _readingPane.ActualHeight);
+        ColorBlendHelper.ApplyColorOverlay(buffer, Color.Black, _readingFadeIntensity, 0.5f, paneRect);
     }
 
     private void TriggerReadingPaneFadeIn()
@@ -1648,8 +1696,15 @@ public class CXPostApp : IDisposable
         }, _cts.Token);
     }
 
-    private async Task SendWithProgressAsync(Account account, ComposeResult result)
+    private async Task SendWithProgressAsync(ComposeResult result)
     {
+        var account = _config.Accounts.FirstOrDefault(a => a.Id == result.AccountId);
+        if (account == null)
+        {
+            EnqueueUiAction(() => ShowError("Account not found"));
+            return;
+        }
+
         var sendMsgId = "send-progress";
         try
         {
@@ -1660,7 +1715,7 @@ public class CXPostApp : IDisposable
                 ReplaceMessage(sendMsgId, $"Sending to {result.To}..."));
 
             await _composeCoordinator.SendAsync(
-                account, result.To, result.Cc, result.Subject,
+                account, result.FromName, result.To, result.Cc, result.Subject,
                 result.Body, result.AttachmentPaths, _cts.Token);
 
             EnqueueUiAction(() =>
@@ -1823,6 +1878,30 @@ public class CXPostApp : IDisposable
         return row?.Tag as MailMessage;
     }
 
+    private List<MailMessage> GetCheckedMessages()
+    {
+        if (_messageTable == null) return [];
+        return _messageTable.GetSelectedRows()
+            .Where(r => r.Tag is MailMessage)
+            .Select(r => (MailMessage)r.Tag!)
+            .ToList();
+    }
+
+    private int GetCheckedCount() => _messageTable?.GetSelectedRows().Count ?? 0;
+
+    private void ClearSelection()
+    {
+        _messageTable?.ClearSelection();
+        UpdateToolbar();
+        UpdateHelpBar();
+        // Restore normal header
+        var msg = GetSelectedMessage();
+        if (msg != null)
+            UpdatePreviewHeader(msg);
+        else
+            SetRightPanelHeader("[grey70]Messages[/]");
+    }
+
     private Account? GetCurrentAccount()
     {
         var folder = _messageListCoordinator.CurrentFolder;
@@ -1853,7 +1932,13 @@ public class CXPostApp : IDisposable
         var ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
         var shift = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Shift);
 
-        if (e.KeyInfo.Key == ConsoleKey.Escape && _isSearchActive)
+        if (e.KeyInfo.Key == ConsoleKey.Escape && GetCheckedCount() > 0)
+        {
+            ClearSelection();
+            ClearReadingPane();
+            e.Handled = true;
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.Escape && _isSearchActive)
         {
             ClearSearch();
             e.Handled = true;
@@ -1863,11 +1948,12 @@ public class CXPostApp : IDisposable
             _ = Task.Run(async () =>
             {
                 var account = GetAccountForMessage(null);
-                var fromDisplay = account != null ? $"{account.Name} <{account.Email}>" : "";
-                var dialog = new ComposeDialog(_contactsService, fromDisplay, cc: account?.DefaultCc ?? "");
+                var dialog = new ComposeDialog(_contactsService, _config.Accounts,
+                    defaultAccountId: account?.Id,
+                    cc: account?.DefaultCc ?? "");
                 var result = await dialog.ShowAsync(_ws);
-                if (result != null && account != null)
-                    await SendWithProgressAsync(account, result);
+                if (result != null)
+                    await SendWithProgressAsync(result);
             });
             e.Handled = true;
         }
@@ -1881,11 +1967,11 @@ public class CXPostApp : IDisposable
                 var (to, subject, body) = _composeCoordinator.PrepareReply(account, msg, replyAll: true);
                 _ = Task.Run(async () =>
                 {
-                    var fromDisplay = $"{account.Name} <{account.Email}>";
-                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to: to, subject: subject, body: body);
+                    var dialog = new ComposeDialog(_contactsService, _config.Accounts,
+                        defaultAccountId: account.Id, to: to, subject: subject, body: body);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
-                        await SendWithProgressAsync(account, result);
+                        await SendWithProgressAsync(result);
                 });
             }
             e.Handled = true;
@@ -1899,11 +1985,11 @@ public class CXPostApp : IDisposable
                 var (to, subject, body) = _composeCoordinator.PrepareReply(account, msg, replyAll: false);
                 _ = Task.Run(async () =>
                 {
-                    var fromDisplay = $"{account.Name} <{account.Email}>";
-                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to: to, subject: subject, body: body);
+                    var dialog = new ComposeDialog(_contactsService, _config.Accounts,
+                        defaultAccountId: account.Id, to: to, subject: subject, body: body);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
-                        await SendWithProgressAsync(account, result);
+                        await SendWithProgressAsync(result);
                 });
             }
             e.Handled = true;
@@ -1917,11 +2003,11 @@ public class CXPostApp : IDisposable
                 var (to, subject, body) = _composeCoordinator.PrepareForward(account, msg);
                 _ = Task.Run(async () =>
                 {
-                    var fromDisplay = $"{account.Name} <{account.Email}>";
-                    var dialog = new ComposeDialog(_contactsService, fromDisplay, to: to, subject: subject, body: body);
+                    var dialog = new ComposeDialog(_contactsService, _config.Accounts,
+                        defaultAccountId: account.Id, to: to, subject: subject, body: body);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
-                        await SendWithProgressAsync(account, result);
+                        await SendWithProgressAsync(result);
                 });
             }
             e.Handled = true;
@@ -2017,103 +2103,136 @@ public class CXPostApp : IDisposable
         }
         else if (e.KeyInfo.Key == KeyBindings.Delete)
         {
-            var msg = GetSelectedMessage();
             var folder = _messageListCoordinator.CurrentFolder;
-            if (msg != null && folder != null)
+            var checkedMsgs = GetCheckedMessages();
+
+            if (checkedMsgs.Count > 0 && folder != null)
             {
-                var account = GetAccountForMessage(msg) ?? GetCurrentAccount();
-                var trash = account != null ? FolderResolver.GetTrash(account, _cacheService) : null;
-                var isInTrash = trash != null && folder.Id == trash.Id;
-                var noTrash = trash == null;
-
-                if (isInTrash || noTrash)
+                // Bulk delete with confirmation
+                var count = checkedMsgs.Count;
+                _ = Task.Run(async () =>
                 {
-                    // Permanent delete — needs confirmation
-                    _ = Task.Run(async () =>
+                    var dialog = new ConfirmDialog(
+                        "Delete Messages",
+                        $"Delete {count} message{(count != 1 ? "s" : "")}?");
+                    var confirmed = await dialog.ShowAsync(_ws);
+                    if (confirmed)
                     {
-                        var dialog = new ConfirmDialog(
-                            "Permanently Delete",
-                            "This message will be permanently deleted. This cannot be undone.");
-                        var confirmed = await dialog.ShowAsync(_ws);
-                        if (confirmed)
+                        EnqueueUiAction(() =>
                         {
-                            EnqueueUiAction(() =>
-                            {
-                                _cacheService.DeleteMessage(folder.Id, msg.Uid);
-                                _messageListCoordinator.RefreshMessageList();
-                                var nextMsg = GetSelectedMessage();
-                                if (nextMsg != null)
-                                    ShowMessagePreview(nextMsg);
-                                else
-                                    ClearReadingPane();
-                                UpdateHelpBar();
-                                UpdateToolbar();
-                            });
-
-                            try
-                            {
-                                using var imap = await _imapFactory.CreateConnectionAsync(account!, _cts.Token);
-                                await imap.DeleteMessageAsync(folder.Path, msg.Uid, _cts.Token);
-                            }
-                            catch (Exception ex)
-                            {
-                                EnqueueUiAction(() => ShowError($"Delete failed: {ex.Message}"));
-                            }
-                        }
-                    });
-                }
-                else
+                            _messageListCoordinator.DeleteMultipleOptimistic(checkedMsgs, folder, _cts.Token);
+                            ClearSelection();
+                            ClearReadingPane();
+                            UpdateHelpBar();
+                            UpdateToolbar();
+                        });
+                    }
+                });
+            }
+            else
+            {
+                var msg = GetSelectedMessage();
+                if (msg != null && folder != null)
                 {
-                    // Move to Trash — optimistic + undo
-                    _messageListCoordinator.DeleteMessageOptimistic(msg, folder, _cts.Token);
-                    var nextMsg = GetSelectedMessage();
-                    if (nextMsg != null)
-                        ShowMessagePreview(nextMsg);
+                    var account = GetAccountForMessage(msg) ?? GetCurrentAccount();
+                    var trash = account != null ? FolderResolver.GetTrash(account, _cacheService) : null;
+                    var isInTrash = trash != null && folder.Id == trash.Id;
+                    var noTrash = trash == null;
+
+                    if (isInTrash || noTrash)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            var dialog = new ConfirmDialog(
+                                "Permanently Delete",
+                                "This message will be permanently deleted. This cannot be undone.");
+                            var confirmed = await dialog.ShowAsync(_ws);
+                            if (confirmed)
+                            {
+                                EnqueueUiAction(() =>
+                                {
+                                    _cacheService.DeleteMessage(folder.Id, msg.Uid);
+                                    _messageListCoordinator.RefreshMessageList();
+                                    var nextMsg = GetSelectedMessage();
+                                    if (nextMsg != null) ShowMessagePreview(nextMsg);
+                                    else ClearReadingPane();
+                                    UpdateHelpBar();
+                                    UpdateToolbar();
+                                });
+                                try
+                                {
+                                    using var imap = await _imapFactory.CreateConnectionAsync(account!, _cts.Token);
+                                    await imap.DeleteMessageAsync(folder.Path, msg.Uid, _cts.Token);
+                                }
+                                catch (Exception ex)
+                                {
+                                    EnqueueUiAction(() => ShowError($"Delete failed: {ex.Message}"));
+                                }
+                            }
+                        });
+                    }
                     else
-                        ClearReadingPane();
-                    UpdateHelpBar();
-                    UpdateToolbar();
+                    {
+                        _messageListCoordinator.DeleteMessageOptimistic(msg, folder, _cts.Token);
+                        var nextMsg = GetSelectedMessage();
+                        if (nextMsg != null) ShowMessagePreview(nextMsg);
+                        else ClearReadingPane();
+                        UpdateHelpBar();
+                        UpdateToolbar();
+                    }
                 }
             }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.ToggleFlag)
         {
-            var msg = GetSelectedMessage();
             var folder = _messageListCoordinator.CurrentFolder;
-            if (msg != null && folder != null)
+            var checkedMsgs = GetCheckedMessages();
+            if (checkedMsgs.Count > 0 && folder != null)
             {
                 _ = Task.Run(async () =>
                 {
-                    try
-                    {
-                        await _messageListCoordinator.ToggleFlagAsync(msg, folder, _cts.Token);
-                    }
-                    catch (Exception ex)
-                    {
-                        EnqueueUiAction(() => ShowError($"Toggle flag failed: {ex.Message}"));
-                    }
+                    try { await _messageListCoordinator.ToggleFlagMultipleAsync(checkedMsgs, folder, _cts.Token); }
+                    catch (Exception ex) { EnqueueUiAction(() => ShowError($"Bulk flag failed: {ex.Message}")); }
                 });
+            }
+            else
+            {
+                var msg = GetSelectedMessage();
+                if (msg != null && folder != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try { await _messageListCoordinator.ToggleFlagAsync(msg, folder, _cts.Token); }
+                        catch (Exception ex) { EnqueueUiAction(() => ShowError($"Toggle flag failed: {ex.Message}")); }
+                    });
+                }
             }
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.ToggleRead)
         {
-            var msg = GetSelectedMessage();
             var folder = _messageListCoordinator.CurrentFolder;
-            if (msg != null && folder != null)
+            var checkedMsgs = GetCheckedMessages();
+            if (checkedMsgs.Count > 0 && folder != null)
             {
                 _ = Task.Run(async () =>
                 {
-                    try
-                    {
-                        await _messageListCoordinator.ToggleReadAsync(msg, folder, _cts.Token);
-                    }
-                    catch (Exception ex)
-                    {
-                        EnqueueUiAction(() => ShowError($"Toggle read failed: {ex.Message}"));
-                    }
+                    try { await _messageListCoordinator.ToggleReadMultipleAsync(checkedMsgs, folder, _cts.Token); }
+                    catch (Exception ex) { EnqueueUiAction(() => ShowError($"Bulk read toggle failed: {ex.Message}")); }
                 });
+            }
+            else
+            {
+                var msg = GetSelectedMessage();
+                if (msg != null && folder != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try { await _messageListCoordinator.ToggleReadAsync(msg, folder, _cts.Token); }
+                        catch (Exception ex) { EnqueueUiAction(() => ShowError($"Toggle read failed: {ex.Message}")); }
+                    });
+                }
             }
             e.Handled = true;
         }

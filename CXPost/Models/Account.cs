@@ -15,6 +15,7 @@ public class Account
     public SecurityType SmtpSecurity { get; set; } = SecurityType.StartTls;
     public DateTime? LastSync { get; set; }
     public string ReplyToAddress { get; set; } = string.Empty;
+    public string FromName { get; set; } = string.Empty;
     public SignaturePosition SignaturePosition { get; set; } = SignaturePosition.BelowQuote;
     public string AutoBcc { get; set; } = string.Empty;
     public string DefaultCc { get; set; } = string.Empty;

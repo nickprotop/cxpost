@@ -11,17 +11,27 @@ using CXPost.UI.Components;
 
 namespace CXPost.UI.Dialogs;
 
-public record ComposeResult(string To, string? Cc, string Subject, string Body, List<string> AttachmentPaths);
+public record ComposeResult(
+    string AccountId,
+    string FromName,
+    string To,
+    string? Cc,
+    string Subject,
+    string Body,
+    List<string> AttachmentPaths);
 
 public class ComposeDialog : DialogBase<ComposeResult?>
 {
     private readonly IContactsService _contacts;
-    private readonly string _fromDisplay;
+    private readonly List<Models.Account> _accounts;
+    private readonly int _initialAccountIndex;
     private readonly string _initialTo;
     private readonly string _initialCc;
     private readonly string _initialSubject;
     private readonly string _initialBody;
 
+    private DropdownControl? _fromDropdown;
+    private PromptControl? _fromNameField;
     private PromptControl? _toField;
     private PromptControl? _ccField;
     private PromptControl? _subjectField;
@@ -33,19 +43,28 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 
     public ComposeDialog(
         IContactsService contacts,
-        string fromDisplay = "",  // "Account Name <email@example.com>"
+        List<Models.Account> accounts,
+        string? defaultAccountId = null,
         string to = "",
         string cc = "",
         string subject = "",
         string body = "")
     {
         _contacts = contacts;
-        _fromDisplay = fromDisplay;
+        _accounts = accounts;
+        _initialAccountIndex = string.IsNullOrEmpty(defaultAccountId)
+            ? 0
+            : Math.Max(0, accounts.FindIndex(a => a.Id == defaultAccountId));
         _initialTo = to;
         _initialCc = cc;
         _initialSubject = subject;
         _initialBody = body;
     }
+
+    private Models.Account? SelectedAccount =>
+        _fromDropdown != null && _fromDropdown.SelectedIndex >= 0 && _fromDropdown.SelectedIndex < _accounts.Count
+            ? _accounts[_fromDropdown.SelectedIndex]
+            : _accounts.Count > 0 ? _accounts[0] : null;
 
     protected override string GetTitle() => "New Message";
     protected override (int width, int height) GetSize() => (80, 30);
@@ -70,16 +89,39 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         Modal.AddControl(Controls.RuleBuilder().WithColor(Color.Grey23)
             .WithMargin(2, 1, 2, 0).Build());
 
-        // From display (read-only — account is determined by context)
-        if (!string.IsNullOrEmpty(_fromDisplay))
+        // ── From (account dropdown + editable name) ────────────────────
+        if (_accounts.Count > 0)
         {
-            var fromLabel = Controls.Markup($"[grey70]From:[/]     [white]{MarkupParser.Escape(_fromDisplay)}[/]")
-                .WithMargin(2, 0, 2, 0)
-                .Build();
-            Modal.AddControl(fromLabel);
+            Modal.AddControl(Controls.Markup("[grey70]From:[/]")
+                .WithMargin(2, 0, 2, 0).Build());
+
+            var fromOptions = _accounts.Select(a => a.Email).ToArray();
+            _fromDropdown = new DropdownControl("", fromOptions)
+            {
+                SelectedIndex = _initialAccountIndex,
+                Margin = new Margin(2, 0, 2, 0)
+            };
+            Modal.AddControl(_fromDropdown);
+
+            var initialAccount = _accounts[_initialAccountIndex];
+            var initialFromName = !string.IsNullOrEmpty(initialAccount.FromName) ? initialAccount.FromName : initialAccount.Name;
+            _fromNameField = new PromptControl { Prompt = "[grey70]Name:[/]    ", Input = initialFromName };
+            _fromNameField.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _fromNameField.Margin = new Margin(2, 0, 2, 0);
+            Modal.AddControl(_fromNameField);
+
+            // Update name field when account changes
+            _fromDropdown.SelectedIndexChanged += (_, idx) =>
+            {
+                if (idx >= 0 && idx < _accounts.Count && _fromNameField != null)
+                {
+                    var acct = _accounts[idx];
+                    _fromNameField.Input = !string.IsNullOrEmpty(acct.FromName) ? acct.FromName : acct.Name;
+                }
+            };
         }
 
-        // ── Address fields (inline prompts) ─────────────────────────────
+        // ── Address fields ──────────────────────────────────────────────
         _toField = new PromptControl { Prompt = "[grey70]To:[/]      ", Input = _initialTo };
         _toField.HorizontalAlignment = HorizontalAlignment.Stretch;
         _toField.Margin = new Margin(2, 0, 2, 0);
@@ -157,7 +199,12 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         if (string.IsNullOrWhiteSpace(to))
             return;
 
+        var account = SelectedAccount;
+        if (account == null) return;
+
         CloseWithResult(new ComposeResult(
+            AccountId: account.Id,
+            FromName: _fromNameField?.Input?.Trim() ?? account.Name,
             To: to,
             Cc: string.IsNullOrWhiteSpace(_ccField?.Input) ? null : _ccField.Input,
             Subject: _subjectField?.Input ?? "",
@@ -199,6 +246,7 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     private bool IsEditing()
     {
         return _bodyEditor?.IsEditing == true
+            || _fromNameField?.HasFocus == true
             || _toField?.HasFocus == true
             || _ccField?.HasFocus == true
             || _subjectField?.HasFocus == true;
