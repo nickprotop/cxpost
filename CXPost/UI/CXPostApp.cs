@@ -1996,19 +1996,127 @@ public class CXPostApp : IDisposable
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.Forward)
         {
-            var msg = GetSelectedMessage();
-            var account = GetAccountForMessage(msg);
-            if (msg != null && account != null)
+            var checkedMessages = GetCheckedMessages();
+            if (checkedMessages.Count > 1)
             {
-                var (to, subject, body) = _composeCoordinator.PrepareForward(account, msg);
-                _ = Task.Run(async () =>
+                // Bulk forward
+                var account = GetAccountForMessage(checkedMessages[0]);
+                if (account != null)
                 {
-                    var dialog = new ComposeDialog(_contactsService, _config.Accounts,
-                        defaultAccountId: account.Id, to: to, subject: subject, body: body);
-                    var result = await dialog.ShowAsync(_ws);
-                    if (result != null)
-                        await SendWithProgressAsync(result);
-                });
+                    var progressId = "fwd-progress";
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var dialog = new BulkForwardDialog(
+                                checkedMessages,
+                                _config.Accounts,
+                                defaultAccountId: account.Id,
+                                composeCoordinator: _composeCoordinator,
+                                onProgress: msg => EnqueueUiAction(() => ReplaceMessage(progressId, msg)),
+                                onSuccess: msg => EnqueueUiAction(() =>
+                                {
+                                    DismissMessage(progressId);
+                                    ShowSuccess(msg);
+                                    ClearSelection();
+                                }),
+                                onError: msg => EnqueueUiAction(() =>
+                                {
+                                    DismissMessage(progressId);
+                                    ShowError(msg);
+                                }),
+                                ct: _cts.Token);
+                            await dialog.ShowAsync(_ws);
+                        }
+                        catch (Exception ex)
+                        {
+                            EnqueueUiAction(() => ShowError($"Forward failed: {ex.Message}"));
+                        }
+                    });
+                }
+            }
+            else
+            {
+                // Single forward (enhanced with attachment toggle)
+                var msg = GetSelectedMessage();
+                var account = GetAccountForMessage(msg);
+                if (msg != null && account != null)
+                {
+                    var (to, subject, body) = _composeCoordinator.PrepareForward(account, msg);
+                    _ = Task.Run(async () =>
+                    {
+                        var dialog = new ComposeDialog(_contactsService, _config.Accounts,
+                            defaultAccountId: account.Id, to: to, subject: subject, body: body,
+                            isForwardMode: true,
+                            originalAttachments: msg.Attachments);
+                        var result = await dialog.ShowAsync(_ws);
+                        if (result != null)
+                        {
+                            if (result.IncludeOriginalAttachments && msg.HasAttachments
+                                && msg.Attachments != null && msg.Attachments.Count > 0)
+                            {
+                                var tempDir = Path.Combine(Path.GetTempPath(), $"cxpost-fwd-{Guid.NewGuid():N}");
+                                var progressId = "fwd-progress";
+                                try
+                                {
+                                    EnqueueUiAction(() => ReplaceMessage(progressId, "Fetching attachments..."));
+                                    var paths = await _composeCoordinator.FetchMessageAttachmentsAsync(
+                                        account, msg, tempDir, _cts.Token);
+
+                                    var totalSize = paths.Sum(p => new FileInfo(p).Length);
+                                    if (totalSize > 20 * 1024 * 1024)
+                                    {
+                                        var sizeMb = totalSize / (1024.0 * 1024.0);
+                                        var confirm = await new ConfirmDialog(
+                                            "Large Attachments",
+                                            $"Total attachment size is {sizeMb:F1} MB. Continue sending?")
+                                            .ShowAsync(_ws);
+                                        if (!confirm)
+                                        {
+                                            EnqueueUiAction(() =>
+                                            {
+                                                DismissMessage(progressId);
+                                                ShowInfo("Forward cancelled.");
+                                            });
+                                            return;
+                                        }
+                                    }
+
+                                    var allPaths = new List<string>(result.AttachmentPaths);
+                                    allPaths.AddRange(paths);
+
+                                    EnqueueUiAction(() => ReplaceMessage(progressId, "Sending forwarded message..."));
+                                    await _composeCoordinator.SendAsync(
+                                        account, result.FromName, result.To, result.Cc,
+                                        result.Subject, result.Body, allPaths, _cts.Token);
+
+                                    EnqueueUiAction(() =>
+                                    {
+                                        DismissMessage(progressId);
+                                        ShowSuccess($"Message forwarded to {result.To}");
+                                    });
+                                }
+                                catch (Exception ex)
+                                {
+                                    EnqueueUiAction(() =>
+                                    {
+                                        DismissMessage(progressId);
+                                        ShowError($"Forward failed: {ex.Message}");
+                                    });
+                                }
+                                finally
+                                {
+                                    try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); }
+                                    catch { }
+                                }
+                            }
+                            else
+                            {
+                                await SendWithProgressAsync(result);
+                            }
+                        }
+                    });
+                }
             }
             e.Handled = true;
         }
