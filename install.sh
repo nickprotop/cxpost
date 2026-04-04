@@ -1,7 +1,7 @@
 #!/bin/bash
 # CXPost Installer
 # Downloads and installs the latest release from GitHub
-# Usage: curl -fsSL https://raw.githubusercontent.com/nickprotop/cxpost/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/nickprotop/cxpost/master/install.sh | bash
 # Copyright (c) Nikolaos Protopapas. All rights reserved.
 # Licensed under the MIT License.
 
@@ -66,7 +66,7 @@ mkdir -p "$CONFIG_DIR"
 mkdir -p "$DATA_DIR"
 
 # Download uninstaller
-curl -fsSL "https://raw.githubusercontent.com/$REPO/main/uninstall.sh" -o "$INSTALL_DIR/cxpost-uninstall.sh"
+curl -fsSL "https://raw.githubusercontent.com/$REPO/master/uninstall.sh" -o "$INSTALL_DIR/cxpost-uninstall.sh"
 chmod +x "$INSTALL_DIR/cxpost-uninstall.sh"
 
 # Ensure PATH

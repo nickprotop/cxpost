@@ -34,13 +34,13 @@ CXPost brings a polished terminal UI to email. Multi-account IMAP with push noti
 
 **Option 1: One-line install** (Linux/macOS, no .NET required)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nickprotop/cxpost/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nickprotop/cxpost/master/install.sh | bash
 cxpost
 ```
 
 **Windows** (PowerShell)
 ```powershell
-irm https://raw.githubusercontent.com/nickprotop/cxpost/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/nickprotop/cxpost/master/install.ps1 | iex
 ```
 
 **Option 2: Build from source** (requires .NET 10)

@@ -1,5 +1,5 @@
 # CXPost Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/nickprotop/cxpost/main/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/nickprotop/cxpost/master/install.ps1 | iex
 # Copyright (c) Nikolaos Protopapas. All rights reserved.
 # Licensed under the MIT License.
 
@@ -45,7 +45,7 @@ $outputPath = Join-Path $installDir "cxpost.exe"
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $outputPath
 
 # Download uninstaller
-$uninstallUrl = "https://raw.githubusercontent.com/$repo/main/cxpost-uninstall.ps1"
+$uninstallUrl = "https://raw.githubusercontent.com/$repo/master/cxpost-uninstall.ps1"
 $uninstallPath = Join-Path $installDir "cxpost-uninstall.ps1"
 Invoke-WebRequest -Uri $uninstallUrl -OutFile $uninstallPath
 
