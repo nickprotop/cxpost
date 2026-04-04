@@ -188,6 +188,40 @@ public class ComposeCoordinator
         return ("", subject, body);
     }
 
+    public (string subject, string body) PrepareBulkForward(Account account, List<MailMessage> messages)
+    {
+        var subject = MessageFormatter.GetBulkForwardSubject(messages, account.ForwardPrefix);
+        return (subject, "");
+    }
+
+    public async Task<List<string>> FetchMessageAttachmentsAsync(
+        Account account, MailMessage message, string tempDir,
+        CancellationToken ct = default)
+    {
+        if (!message.HasAttachments || message.Attachments == null || message.Attachments.Count == 0)
+            return [];
+
+        var folder = _cache.GetFolders(account.Id)
+            .FirstOrDefault(f => f.Id == message.FolderId);
+        if (folder == null) return [];
+
+        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+        var results = await imap.FetchAttachmentsToTempAsync(folder.Path, message.Uid, tempDir, ct);
+        return results.Select(r => r.TempPath).ToList();
+    }
+
+    public static long GetTotalAttachmentSize(List<MailMessage> messages)
+    {
+        long total = 0;
+        foreach (var msg in messages)
+        {
+            if (msg.Attachments == null) continue;
+            foreach (var att in msg.Attachments)
+                total += att.Size;
+        }
+        return total;
+    }
+
     private static IEnumerable<MailboxAddress> ParseAddresses(string addresses)
     {
         foreach (var addr in addresses.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
