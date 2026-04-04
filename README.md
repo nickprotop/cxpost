@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Platform](https://img.shields.io/badge/Platform-Linux-orange.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-Linux%20|%20macOS%20|%20Windows-orange.svg)]()
 
 </div>
 
@@ -32,10 +32,15 @@ CXPost brings a polished terminal UI to email. Multi-account IMAP with push noti
 
 ## Quick Start
 
-**Option 1: One-line install** (no .NET required)
+**Option 1: One-line install** (Linux/macOS, no .NET required)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nickprotop/cxpost/main/install.sh | bash
 cxpost
+```
+
+**Windows** (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/nickprotop/cxpost/main/install.ps1 | iex
 ```
 
 **Option 2: Build from source** (requires .NET 10)

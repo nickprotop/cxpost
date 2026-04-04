@@ -14,15 +14,30 @@ DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/cxpost"
 
 echo "Installing CXPost..."
 
-# Detect architecture
+# Detect OS and architecture
+OS=$(uname -s)
 ARCH=$(uname -m)
-case "$ARCH" in
-    x86_64)  BINARY="cxpost-linux-x64" ;;
-    aarch64) BINARY="cxpost-linux-arm64" ;;
+
+case "$OS" in
+    Linux)
+        case "$ARCH" in
+            x86_64)  BINARY="cxpost-linux-x64" ;;
+            aarch64) BINARY="cxpost-linux-arm64" ;;
+            *) echo "Error: Unsupported Linux architecture: $ARCH"; exit 1 ;;
+        esac
+        ;;
+    Darwin)
+        case "$ARCH" in
+            x86_64)  BINARY="cxpost-osx-x64" ;;
+            arm64)   BINARY="cxpost-osx-arm64" ;;
+            *) echo "Error: Unsupported macOS architecture: $ARCH"; exit 1 ;;
+        esac
+        ;;
     *)
-        echo "Error: Unsupported architecture: $ARCH"
-        echo "CXPost supports x86_64 and aarch64 (ARM64)."
-        exit 1 ;;
+        echo "Error: Unsupported OS: $OS"
+        echo "CXPost supports Linux and macOS. For Windows, download from GitHub Releases."
+        exit 1
+        ;;
 esac
 
 # Get latest release info

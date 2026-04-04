@@ -18,6 +18,14 @@ jobs:
             name: cxpost-linux-x64
           - rid: linux-arm64
             name: cxpost-linux-arm64
+          - rid: osx-x64
+            name: cxpost-osx-x64
+          - rid: osx-arm64
+            name: cxpost-osx-arm64
+          - rid: win-x64
+            name: cxpost-win-x64.exe
+          - rid: win-arm64
+            name: cxpost-win-arm64.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +52,12 @@ jobs:
             -o ./publish/${{ matrix.rid }}
 
       - name: Rename binary
-        run: mv ./publish/${{ matrix.rid }}/CXPost ./publish/${{ matrix.rid }}/${{ matrix.name }}
+        run: |
+          if [ -f "./publish/${{ matrix.rid }}/CXPost.exe" ]; then
+            mv ./publish/${{ matrix.rid }}/CXPost.exe ./publish/${{ matrix.rid }}/${{ matrix.name }}
+          else
+            mv ./publish/${{ matrix.rid }}/CXPost ./publish/${{ matrix.rid }}/${{ matrix.name }}
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -72,11 +85,15 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          cp ./artifacts/cxpost-linux-x64/cxpost-linux-x64 release/
-          cp ./artifacts/cxpost-linux-arm64/cxpost-linux-arm64 release/
+          # Copy all platform binaries
+          for dir in ./artifacts/cxpost-*/; do
+            cp "$dir"/* release/ 2>/dev/null || true
+          done
           cp install.sh release/
+          cp install.ps1 release/
           cp uninstall.sh release/
-          chmod +x release/*
+          cp uninstall.ps1 release/
+          chmod +x release/cxpost-linux-* release/cxpost-osx-* release/*.sh 2>/dev/null || true
 
           # Generate checksums
           cd release
@@ -113,8 +130,14 @@ jobs:
 
             ## Installation
 
+            **Linux / macOS:**
             ```bash
             curl -fsSL https://raw.githubusercontent.com/nickprotop/cxpost/main/install.sh | bash
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            irm https://raw.githubusercontent.com/nickprotop/cxpost/main/install.ps1 | iex
             ```
 
             ## Manual Download
@@ -123,6 +146,10 @@ jobs:
             |----------|--------|
             | Linux x64 | `cxpost-linux-x64` |
             | Linux ARM64 | `cxpost-linux-arm64` |
+            | macOS x64 (Intel) | `cxpost-osx-x64` |
+            | macOS ARM64 (Apple Silicon) | `cxpost-osx-arm64` |
+            | Windows x64 | `cxpost-win-x64.exe` |
+            | Windows ARM64 | `cxpost-win-arm64.exe` |
 
             ## Changes
 
