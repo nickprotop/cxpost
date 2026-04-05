@@ -168,7 +168,7 @@ public class CXPostApp : IDisposable
             {
                 var msg = GetSelectedMessage();
                 if (msg != null) UpdatePreviewHeader(msg);
-                else SetRightPanelHeader("[grey70]Messages[/]");
+                else SetRightPanelHeader("[grey70]Messages[/]", showSyncAction: !_isSearchActive);
             }
         };
 
@@ -557,7 +557,9 @@ public class CXPostApp : IDisposable
             }
 
             _helpBar.Add("Ctrl+S", "Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
-            _helpBar.Add("F5", "Sync", () => SimulateKey(ConsoleKey.F5));
+            _helpBar.Add("F5", "Sync All", () => SimulateKey(ConsoleKey.F5));
+            if (!_isSearchActive && _dashboardPanel?.Visible != true)
+                _helpBar.Add("Shift+F5", "Sync Folder", () => SimulateKey(ConsoleKey.F5, shift: true));
             _helpBar.Add("Ctrl+,", "Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
         }
 
@@ -989,7 +991,7 @@ public class CXPostApp : IDisposable
             _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName,
                 onAppClick: NavigateToAllAccounts,
                 onAccountClick: account != null ? () => NavigateToAccount(account.Id) : null);
-            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]");
+            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true);
 
             ClearReadingPane();
             UpdateHelpBar();
@@ -1021,7 +1023,7 @@ public class CXPostApp : IDisposable
                 _statusBar.UpdateBreadcrumb("All Accounts", agg.TypeKey,
                     onAppClick: NavigateToAllAccounts,
                     onAccountClick: NavigateToAllAccounts);
-                SetRightPanelHeader($"[grey70]Messages[/] [grey50]({allMessages.Count})[/]");
+                SetRightPanelHeader($"[grey70]Messages[/] [grey50]({allMessages.Count})[/]", showSyncAction: true);
 
                 ClearReadingPane();
                 UpdateHelpBar();
@@ -1185,7 +1187,7 @@ public class CXPostApp : IDisposable
         UpdateToolbar();
     }
 
-    private void SetRightPanelHeader(string text, string? clearAction = null)
+    private void SetRightPanelHeader(string text, string? clearAction = null, bool showSyncAction = false)
     {
         if (_rightPanelHeader == null) return;
         _rightPanelHeader.ClearAll();
@@ -1194,6 +1196,11 @@ public class CXPostApp : IDisposable
         {
             _rightPanelHeader.AddLeftSeparator();
             _rightPanelHeader.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u2715 {clearAction}[/]", () => ClearSearch());
+        }
+        if (showSyncAction)
+        {
+            _rightPanelHeader.AddLeftSeparator();
+            _rightPanelHeader.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u21bb Sync[/] [grey50](Shift+F5)[/]", () => SyncActiveFolder());
         }
     }
 
@@ -1232,7 +1239,7 @@ public class CXPostApp : IDisposable
         _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName,
             onAppClick: NavigateToAllAccounts,
             onAccountClick: account != null ? () => NavigateToAccount(account.Id) : null);
-        SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]");
+        SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true);
         ClearReadingPane();
         UpdateHelpBar();
         UpdateToolbar();
@@ -1295,7 +1302,7 @@ public class CXPostApp : IDisposable
         if (folder != null)
         {
             var messages = _cacheService.GetMessages(folder.Id);
-            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]");
+            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true);
         }
         else
         {
@@ -1305,6 +1312,75 @@ public class CXPostApp : IDisposable
         ClearReadingPane();
         UpdateHelpBar();
         UpdateToolbar();
+    }
+
+    private volatile bool _folderSyncInProgress;
+
+    private void SyncActiveFolder()
+    {
+        // Guards: no sync during search, dashboard, or bulk selection
+        if (_isSearchActive) return;
+        if (_dashboardPanel?.Visible == true) return;
+        if (GetCheckedCount() > 0) return;
+        if (_folderSyncInProgress) return;
+
+        _folderSyncInProgress = true;
+
+        if (_isAggregatedView && _aggregatedFolderIds != null)
+        {
+            // Aggregated view: sync this folder type across all accounts sequentially
+            var folders = _aggregatedFolderIds
+                .Select(id => FindFolderById(id))
+                .Where(f => f != null)
+                .Select(f => (folder: f!, account: _config.Accounts.FirstOrDefault(a => a.Id == f!.AccountId)))
+                .Where(x => x.account != null)
+                .Select(x => (x.folder, account: x.account!))
+                .ToList();
+            if (folders.Count == 0) { _folderSyncInProgress = false; return; }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    foreach (var (folder, account) in folders)
+                        await _syncCoordinator.SyncSingleFolderAsync(account, folder, _cts.Token);
+                    EnqueueUiAction(() => _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), true));
+                }
+                catch (Exception ex)
+                {
+                    EnqueueUiAction(() => ShowError($"Sync failed: {ex.Message}"));
+                }
+                finally
+                {
+                    _folderSyncInProgress = false;
+                }
+            });
+        }
+        else
+        {
+            // Single folder view
+            var folder = _messageListCoordinator.CurrentFolder;
+            if (folder == null) { _folderSyncInProgress = false; return; }
+            var account = _config.Accounts.FirstOrDefault(a => a.Id == folder.AccountId);
+            if (account == null) { _folderSyncInProgress = false; return; }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _syncCoordinator.SyncSingleFolderAsync(account, folder, _cts.Token);
+                    EnqueueUiAction(() => _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), true));
+                }
+                catch (Exception ex)
+                {
+                    EnqueueUiAction(() => ShowError($"Sync failed: {ex.Message}"));
+                }
+                finally
+                {
+                    _folderSyncInProgress = false;
+                }
+            });
+        }
     }
 
     public void ShowError(string message) => _messageBar?.ShowError(message);
@@ -1648,7 +1724,7 @@ public class CXPostApp : IDisposable
         }
 
         if (!_isSearchActive && GetCheckedCount() == 0 && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
-            SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]");
+            SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]", showSyncAction: true);
     }
 
     private void ReadingPaneFadeOverlay(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)
@@ -1973,7 +2049,7 @@ public class CXPostApp : IDisposable
         if (msg != null)
             UpdatePreviewHeader(msg);
         else
-            SetRightPanelHeader("[grey70]Messages[/]");
+            SetRightPanelHeader("[grey70]Messages[/]", showSyncAction: !_isSearchActive);
     }
 
     private Account? GetCurrentAccount()
@@ -2459,7 +2535,12 @@ public class CXPostApp : IDisposable
             }
             e.Handled = true;
         }
-        else if (e.KeyInfo.Key == KeyBindings.Refresh)
+        else if (e.KeyInfo.Key == KeyBindings.RefreshFolder && shift)
+        {
+            SyncActiveFolder();
+            e.Handled = true;
+        }
+        else if (e.KeyInfo.Key == KeyBindings.Refresh && !shift)
         {
             _ = Task.Run(async () =>
             {

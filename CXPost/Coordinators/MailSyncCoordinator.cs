@@ -197,6 +197,80 @@ public class MailSyncCoordinator
         }
     }
 
+    /// <summary>
+    /// Syncs a single folder by opening a connection, syncing, and releasing.
+    /// Used by the per-folder sync (Shift+F5) action.
+    /// </summary>
+    public async Task SyncSingleFolderAsync(Account account, MailFolder folder, CancellationToken ct)
+    {
+        var imap = _imapFactory.GetConnection(account);
+        var imapLock = _imapFactory.GetLock(account.Id);
+
+        var syncMsgId = $"sync-folder-{folder.Id}";
+        _syncingFolderIds.TryAdd(folder.Id, true);
+
+        try
+        {
+            _app.Value.EnqueueUiAction(() =>
+            {
+                _app.Value.ReplaceMessage(syncMsgId,
+                    $"Syncing {folder.DisplayName}...");
+                _app.Value.RefreshFolderTree();
+            });
+
+            await imapLock.WaitAsync(ct);
+            try
+            {
+                if (!imap.IsConnected)
+                {
+                    try
+                    {
+                        await imap.ConnectAsync(account, ct);
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        ImapLogger.Warn($"[{account.Name}] Folder sync connect failed: {ex.Message} — retrying");
+                        await Task.Delay(2000, ct);
+                        try { await imap.DisconnectAsync(CancellationToken.None); } catch { }
+                        await imap.ConnectAsync(account, ct);
+                    }
+                }
+
+                await SyncFolderAsync(account, folder, imap, ct);
+            }
+            finally
+            {
+                imapLock.Release();
+            }
+
+            _app.Value.EnqueueUiAction(() =>
+            {
+                _app.Value.DismissMessage(syncMsgId);
+                _app.Value.RefreshFolderTree();
+                _app.Value.RefreshCurrentMessageListIfFolder(folder.Id);
+                _app.Value.ShowInfo($"Synced {folder.DisplayName}");
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(syncMsgId));
+        }
+        catch (Exception ex)
+        {
+            ImapLogger.Error($"[{account.Name}] Folder sync failed for {folder.DisplayName}: {ex.Message}", ex);
+            _app.Value.EnqueueUiAction(() =>
+            {
+                _app.Value.DismissMessage(syncMsgId);
+                _app.Value.ShowWarning($"Sync failed for {folder.DisplayName}: {ex.Message}");
+            });
+        }
+        finally
+        {
+            _syncingFolderIds.TryRemove(folder.Id, out _);
+            _app.Value.EnqueueUiAction(() => _app.Value.RefreshFolderTree());
+        }
+    }
+
     public async Task FetchBodyAsync(MailFolder folder, MailMessage message, CancellationToken ct)
     {
         // If body is cached but attachments aren't populated yet, still need to fetch
@@ -256,7 +330,7 @@ public class MailSyncCoordinator
                 var debounceTimer = new System.Threading.Timer(_ =>
                 {
                     var folder = _cache.GetFolders(account.Id).FirstOrDefault(f => f.Path == folderPath);
-                    if (folder != null)
+                    if (folder != null && !_syncingFolderIds.ContainsKey(folder.Id))
                     {
                         _ = Task.Run(async () =>
                         {

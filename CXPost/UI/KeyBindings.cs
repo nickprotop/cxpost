@@ -12,6 +12,7 @@ public static class KeyBindings
     public static readonly ConsoleKey Search = ConsoleKey.S;               // Ctrl+S
     public static readonly ConsoleKey MoveToFolder = ConsoleKey.M;         // Ctrl+M
     public static readonly ConsoleKey Refresh = ConsoleKey.F5;             // F5
+    public static readonly ConsoleKey RefreshFolder = ConsoleKey.F5;       // Shift+F5
     public static readonly ConsoleKey SwitchLayout = ConsoleKey.F8;        // F8
     public static readonly ConsoleKey Settings = ConsoleKey.OemComma;      // Ctrl+,
 
