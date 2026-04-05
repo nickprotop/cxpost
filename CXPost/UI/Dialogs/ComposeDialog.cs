@@ -45,6 +45,11 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     private readonly List<Models.AttachmentInfo>? _originalAttachments;
     private CheckboxControl? _includeOriginalAttachments;
 
+    // Autocomplete state
+    private AutocompletePortalContent? _autocompletePortal;
+    private LayoutNode? _autocompletePortalNode;
+    private PromptControl? _activeAutocompletePrompt;
+
     public ComposeDialog(
         IContactsService contacts,
         List<Models.Account> accounts,
@@ -211,6 +216,11 @@ public class ComposeDialog : DialogBase<ComposeResult?>
             .WithMargin(2, 0, 2, 0)
             .Build();
         Modal.AddControl(toolbar);
+
+        // ── Autocomplete hooks ──────────────────────────────────────────
+        _toField.InputChanged += (_, text) => OnPromptInputChanged(_toField, text);
+        _ccField.InputChanged += (_, text) => OnPromptInputChanged(_ccField, text);
+        Modal.PreviewKeyPressed += OnPreviewKey;
     }
 
     private void TrySend()
@@ -252,6 +262,18 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         {
             TrySend();
             e.Handled = true;
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.Spacebar
+                 && e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control))
+        {
+            var prompt = _toField?.HasFocus == true ? _toField
+                       : _ccField?.HasFocus == true ? _ccField
+                       : null;
+            if (prompt != null)
+            {
+                OpenAutocomplete(prompt);
+                e.Handled = true;
+            }
         }
         else if (e.KeyInfo.Key == ConsoleKey.Escape && e.AlreadyHandled)
         {
@@ -369,5 +391,153 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         if (bytes < 1024) return $"{bytes} B";
         if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
         return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    // ── Autocomplete ────────────────────────────────────────────────
+
+    protected override void OnCleanup()
+    {
+        CloseAutocomplete();
+    }
+
+    private void OnPreviewKey(object? sender, KeyPressedEventArgs e)
+    {
+        // ↓ in To/Cc prompt when portal is closed → open it
+        if (e.KeyInfo.Key == ConsoleKey.DownArrow && _autocompletePortal == null)
+        {
+            var prompt = _toField?.HasFocus == true ? _toField
+                       : _ccField?.HasFocus == true ? _ccField
+                       : null;
+            if (prompt != null)
+            {
+                OpenAutocomplete(prompt);
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (_autocompletePortal == null || !_autocompletePortal.HasItems)
+            return;
+
+        if (_activeAutocompletePrompt?.HasFocus != true)
+            return;
+
+        if (e.KeyInfo.Key == ConsoleKey.UpArrow)
+        {
+            _autocompletePortal.MoveUp();
+            e.Handled = true;
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.DownArrow)
+        {
+            _autocompletePortal.MoveDown();
+            e.Handled = true;
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.Enter || e.KeyInfo.Key == ConsoleKey.Tab)
+        {
+            var selected = _autocompletePortal.GetSelectedItem();
+            if (selected != null)
+            {
+                InsertContact(selected);
+                CloseAutocomplete();
+                e.Handled = true;
+            }
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.Escape)
+        {
+            CloseAutocomplete();
+            e.Handled = true;
+        }
+        else if (e.KeyInfo.Key == ConsoleKey.Spacebar
+                 && e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control))
+        {
+            OpenAutocomplete(_activeAutocompletePrompt);
+            e.Handled = true;
+        }
+    }
+
+    private void OnPromptInputChanged(PromptControl prompt, string text)
+    {
+        var token = ExtractCurrentToken(text);
+        if (token.Length >= 2)
+        {
+            var results = _contacts.Autocomplete(token);
+            if (results.Count > 0)
+                ShowAutocomplete(prompt, results);
+            else
+                CloseAutocomplete();
+        }
+        else if (_activeAutocompletePrompt == prompt)
+        {
+            CloseAutocomplete();
+        }
+    }
+
+    private void OpenAutocomplete(PromptControl prompt)
+    {
+        var token = ExtractCurrentToken(prompt.Input ?? "");
+        List<string> results;
+        if (string.IsNullOrEmpty(token))
+            results = _contacts.GetTopContacts(10);
+        else
+            results = _contacts.Autocomplete(token);
+
+        if (results.Count > 0)
+            ShowAutocomplete(prompt, results);
+    }
+
+    private void ShowAutocomplete(PromptControl prompt, List<string> results)
+    {
+        if (_autocompletePortal == null)
+        {
+            _autocompletePortal = new AutocompletePortalContent(prompt);
+            _autocompletePortal.ItemSelected += OnAutocompleteItemSelected;
+            _autocompletePortal.UpdateItems(results);
+            _autocompletePortalNode = Modal.CreatePortal(prompt, _autocompletePortal);
+            _activeAutocompletePrompt = prompt;
+        }
+        else if (_activeAutocompletePrompt == prompt)
+        {
+            _autocompletePortal.UpdateItems(results);
+        }
+        else
+        {
+            CloseAutocomplete();
+            ShowAutocomplete(prompt, results);
+        }
+    }
+
+    private void CloseAutocomplete()
+    {
+        if (_autocompletePortal != null && _autocompletePortalNode != null)
+        {
+            Modal.RemovePortal(_activeAutocompletePrompt!, _autocompletePortalNode);
+            _autocompletePortal.ItemSelected -= OnAutocompleteItemSelected;
+            _autocompletePortal = null;
+            _autocompletePortalNode = null;
+            _activeAutocompletePrompt = null;
+        }
+    }
+
+    private void OnAutocompleteItemSelected(string item)
+    {
+        InsertContact(item);
+        CloseAutocomplete();
+    }
+
+    private void InsertContact(string contact)
+    {
+        if (_activeAutocompletePrompt == null) return;
+
+        var text = _activeAutocompletePrompt.Input ?? "";
+        var lastComma = text.LastIndexOf(',');
+        var prefix = lastComma >= 0 ? text[..(lastComma + 1)] + " " : "";
+        _activeAutocompletePrompt.SetInput(prefix + contact + ", ");
+    }
+
+    public static string ExtractCurrentToken(string text)
+    {
+        var lastComma = text.LastIndexOf(',');
+        var token = lastComma >= 0 ? text[(lastComma + 1)..] : text;
+        return token.Trim();
     }
 }

@@ -53,4 +53,18 @@ public class ContactsServiceTests : IDisposable
         Assert.Equal(2, results.Count);
         Assert.StartsWith("Frequent", results[0]);
     }
+
+    [Fact]
+    public void GetTopContacts_returns_formatted_top_contacts()
+    {
+        _service.RecordContact("alice@example.com", "Alice");
+        _service.RecordContact("bob@example.com", null);
+        _service.RecordContact("alice@example.com", "Alice");
+
+        var results = _service.GetTopContacts(10);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("Alice <alice@example.com>", results[0]);
+        Assert.Equal("bob@example.com", results[1]);
+    }
 }

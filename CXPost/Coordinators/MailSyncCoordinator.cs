@@ -13,6 +13,7 @@ public class MailSyncCoordinator
     private readonly ThreadingService _threading;
     private readonly Lazy<CXPostApp> _app;
     private readonly NotificationCoordinator _notifications;
+    private readonly IContactsService _contacts;
     private readonly ConcurrentDictionary<string, bool> _syncingAccounts = new();
     private readonly ConcurrentDictionary<int, bool> _syncingFolderIds = new();
     private readonly ConcurrentDictionary<string, bool> _fetchingBodies = new();
@@ -28,7 +29,8 @@ public class MailSyncCoordinator
         IConfigService configService,
         ThreadingService threading,
         Lazy<CXPostApp> app,
-        NotificationCoordinator notifications)
+        NotificationCoordinator notifications,
+        IContactsService contacts)
     {
         _imapFactory = imapFactory;
         _cache = cache;
@@ -36,6 +38,7 @@ public class MailSyncCoordinator
         _threading = threading;
         _app = app;
         _notifications = notifications;
+        _contacts = contacts;
     }
 
     public async Task SyncAccountAsync(Account account, CancellationToken ct)
@@ -131,6 +134,10 @@ public class MailSyncCoordinator
                 persisted.LastSync = account.LastSync;
                 _configService.Save(config);
             }
+
+            // Update contacts database from synced messages
+            if (_contacts is ContactsService cs)
+                cs.ImportFromCache(_cache, account);
 
             ImapLogger.Info($"[{account.Name}] SyncAccount completed: {totalMessages} new messages");
             _app.Value.EnqueueUiAction(() =>

@@ -71,4 +71,21 @@ public class ContactRepositoryTests : IDisposable
         _repo.UpsertContact("alice@example.com", "Alice");
         Assert.Empty(_repo.Search("nobody"));
     }
+
+    [Fact]
+    public void GetTop_returns_most_used_contacts()
+    {
+        _repo.UpsertContact("rare@example.com", "Rare");
+        _repo.UpsertContact("freq@example.com", "Frequent");
+        _repo.UpsertContact("freq@example.com", "Frequent");
+        _repo.UpsertContact("freq@example.com", "Frequent");
+        _repo.UpsertContact("mid@example.com", "Mid");
+        _repo.UpsertContact("mid@example.com", "Mid");
+
+        var results = _repo.GetTop(2);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("freq@example.com", results[0].Address);
+        Assert.Equal("mid@example.com", results[1].Address);
+    }
 }

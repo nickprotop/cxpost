@@ -386,6 +386,10 @@ public class CXPostApp : IDisposable
         }
         else
         {
+            // Import contacts from cached messages in background
+            _ = Task.Run(() =>
+                ((ContactsService)_contactsService).ImportFromCache(_cacheService, _config.Accounts));
+
             // Start background sync for all configured accounts
             StartBackgroundSync();
         }
@@ -2163,6 +2167,7 @@ public class CXPostApp : IDisposable
                                 _config.Accounts,
                                 defaultAccountId: account.Id,
                                 composeCoordinator: _composeCoordinator,
+                                contacts: _contactsService,
                                 onProgress: msg => EnqueueUiAction(() => ReplaceMessage(progressId, msg)),
                                 onSuccess: msg => EnqueueUiAction(() =>
                                 {

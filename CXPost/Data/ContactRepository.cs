@@ -29,6 +29,34 @@ public class ContactRepository
         cmd.ExecuteNonQuery();
     }
 
+    public void UpsertBatch(IEnumerable<(string address, string? displayName)> contacts)
+    {
+        using var tx = _connection.BeginTransaction();
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            INSERT INTO contacts (address, display_name, use_count, last_used)
+            VALUES (@address, @displayName, 1, @lastUsed)
+            ON CONFLICT(address) DO UPDATE SET
+                display_name = COALESCE(@displayName, display_name),
+                use_count = use_count + 1,
+                last_used = @lastUsed
+            """;
+        var pAddr = cmd.Parameters.Add("@address", SqliteType.Text);
+        var pName = cmd.Parameters.Add("@displayName", SqliteType.Text);
+        var pTime = cmd.Parameters.Add("@lastUsed", SqliteType.Text);
+
+        var now = DateTime.UtcNow.ToString("O");
+        foreach (var (address, displayName) in contacts)
+        {
+            pAddr.Value = address;
+            pName.Value = (object?)displayName ?? DBNull.Value;
+            pTime.Value = now;
+            cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
     public List<Contact> Search(string query)
     {
         using var cmd = _connection.CreateCommand();
@@ -40,6 +68,32 @@ public class ContactRepository
             LIMIT 20
             """;
         cmd.Parameters.AddWithValue("@query", $"%{query}%");
+
+        var contacts = new List<Contact>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            contacts.Add(new Contact
+            {
+                Address = reader.GetString(0),
+                DisplayName = reader.IsDBNull(1) ? null : reader.GetString(1),
+                UseCount = reader.GetInt32(2),
+                LastUsed = DateTime.Parse(reader.GetString(3))
+            });
+        }
+        return contacts;
+    }
+
+    public List<Contact> GetTop(int limit = 10)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT address, display_name, use_count, last_used
+            FROM contacts
+            ORDER BY use_count DESC
+            LIMIT @limit
+            """;
+        cmd.Parameters.AddWithValue("@limit", limit);
 
         var contacts = new List<Contact>();
         using var reader = cmd.ExecuteReader();

@@ -4,4 +4,5 @@ public interface IContactsService
 {
     void RecordContact(string address, string? displayName);
     List<string> Autocomplete(string query);
+    List<string> GetTopContacts(int limit = 10);
 }
