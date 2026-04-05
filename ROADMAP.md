@@ -3,7 +3,10 @@
 ## Near-term — Polish What Exists
 
 - [x] **Bulk forward dialog** — dedicated compose dialog for forwarding multiple checked messages with shared header text and individual message bodies; includes attachment forwarding for both bulk and single forward
-- [ ] **Address book** — browseable contact dialog built from fetched mail history (ContactsService infrastructure exists), ~~with autocomplete in To/Cc fields~~ (autocomplete done)
+- [x] **Per-folder sync** — Shift+F5 or ↻ Sync button in message list header syncs only the active folder; aggregated views sync that folder type across all accounts sequentially
+- [x] **Contact autocomplete** — portal-based autocomplete on To/Cc fields in compose and forward dialogs; triggered by typing 2+ chars, ↓ arrow, or Ctrl+Space; contacts populated from cached mail headers and refreshed on sync
+- [ ] **Address book** — browseable contact dialog for searching, browsing, and selecting contacts
+- [ ] **Draft save/restore** — Ctrl+S in compose saves to Drafts folder, drafts reopenable from folder tree
 - [ ] **Draft save/restore** — Ctrl+S in compose saves to Drafts folder, drafts reopenable from folder tree
 - [ ] **Keyboard shortcut overlay (F1)** — quick reference modal showing all shortcuts without leaving the app
 
