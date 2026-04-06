@@ -87,7 +87,8 @@ public class CXPostApp : IDisposable
     private int _spinnerIndex;
     private float _syncPulsePhase;
 
-    // Search state
+    // Search & filter state
+    private bool _isFlaggedFilterActive;
     private bool _isSearchActive;
     public bool IsSearchActive => _isSearchActive;
     private string? _activeSearchQuery;
@@ -157,6 +158,7 @@ public class CXPostApp : IDisposable
             .OnRowActivated(OnMessageActivated)
             .Build();
         _messageTable.CheckboxMode = true;
+        _messageTable.FilteringEnabled = true;
         _messageTable.HoverEnabled = false;
         _messageTable.MultiSelectionChanged += (_, count) =>
         {
@@ -971,9 +973,10 @@ public class CXPostApp : IDisposable
 
     private void OnFolderSelected(object? sender, TreeNodeEventArgs args)
     {
-        // Clear search state when navigating to a different folder
+        // Clear search and filter state when navigating to a different folder
         _isSearchActive = false;
         _activeSearchQuery = null;
+        _isFlaggedFilterActive = false;
 
         if (args.Node?.Tag is FolderTag ft)
         {
@@ -998,7 +1001,7 @@ public class CXPostApp : IDisposable
             _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName,
                 onAppClick: NavigateToAllAccounts,
                 onAccountClick: account != null ? () => NavigateToAccount(account.Id) : null);
-            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true);
+            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true, showFlaggedFilter: true);
 
             ClearReadingPane();
             UpdateHelpBar();
@@ -1030,7 +1033,7 @@ public class CXPostApp : IDisposable
                 _statusBar.UpdateBreadcrumb("All Accounts", agg.TypeKey,
                     onAppClick: NavigateToAllAccounts,
                     onAccountClick: NavigateToAllAccounts);
-                SetRightPanelHeader($"[grey70]Messages[/] [grey50]({allMessages.Count})[/]", showSyncAction: true);
+                SetRightPanelHeader($"[grey70]Messages[/] [grey50]({allMessages.Count})[/]", showSyncAction: true, showFlaggedFilter: true);
 
                 ClearReadingPane();
                 UpdateHelpBar();
@@ -1194,7 +1197,8 @@ public class CXPostApp : IDisposable
         UpdateToolbar();
     }
 
-    private void SetRightPanelHeader(string text, string? clearAction = null, bool showSyncAction = false)
+    private void SetRightPanelHeader(string text, string? clearAction = null, bool showSyncAction = false,
+        bool showFlaggedFilter = false)
     {
         if (_rightPanelHeader == null) return;
         _rightPanelHeader.ClearAll();
@@ -1208,6 +1212,14 @@ public class CXPostApp : IDisposable
         {
             _rightPanelHeader.AddLeftSeparator();
             _rightPanelHeader.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u21bb Sync[/] [grey50](Shift+F5)[/]", () => SyncActiveFolder());
+        }
+        if (showFlaggedFilter)
+        {
+            _rightPanelHeader.AddLeftSeparator();
+            var starLabel = _isFlaggedFilterActive
+                ? $"[yellow]\u2605 Starred[/]"
+                : $"[{ColorScheme.PrimaryMarkup}]\u2606 Starred[/]";
+            _rightPanelHeader.AddLeftText(starLabel, ToggleFlaggedFilter);
         }
     }
 
@@ -1233,6 +1245,7 @@ public class CXPostApp : IDisposable
         // Show messages (same as OnFolderSelected for FolderTag)
         _isSearchActive = false;
         _activeSearchQuery = null;
+        _isFlaggedFilterActive = false;
         _isAggregatedView = false;
         ShowMessageListView();
         _messageListCoordinator.SelectFolder(folder);
@@ -1246,7 +1259,7 @@ public class CXPostApp : IDisposable
         _statusBar.UpdateBreadcrumb(account?.Name ?? "Unknown", folder.DisplayName,
             onAppClick: NavigateToAllAccounts,
             onAccountClick: account != null ? () => NavigateToAccount(account.Id) : null);
-        SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true);
+        SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true, showFlaggedFilter: true);
         ClearReadingPane();
         UpdateHelpBar();
         UpdateToolbar();
@@ -1309,7 +1322,7 @@ public class CXPostApp : IDisposable
         if (folder != null)
         {
             var messages = _cacheService.GetMessages(folder.Id);
-            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true);
+            SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true, showFlaggedFilter: true);
         }
         else
         {
@@ -1319,6 +1332,44 @@ public class CXPostApp : IDisposable
         ClearReadingPane();
         UpdateHelpBar();
         UpdateToolbar();
+    }
+
+    private void ToggleFlaggedFilter()
+    {
+        _isFlaggedFilterActive = !_isFlaggedFilterActive;
+        _messageListCoordinator.RefreshMessageList();
+        RefreshFlaggedHeader();
+    }
+
+    private void RefreshFlaggedHeader()
+    {
+        List<MailMessage> allMessages;
+        if (_isAggregatedView && _aggregatedFolderIds != null)
+        {
+            allMessages = [];
+            foreach (var fid in _aggregatedFolderIds)
+                allMessages.AddRange(_cacheService.GetMessages(fid));
+        }
+        else
+        {
+            var folder = _messageListCoordinator.CurrentFolder;
+            if (folder == null) return;
+            allMessages = _cacheService.GetMessages(folder.Id);
+        }
+
+        if (_isFlaggedFilterActive)
+        {
+            var starredCount = allMessages.Count(m => m.IsFlagged);
+            SetRightPanelHeader(
+                $"[grey70]Messages[/] [grey50]({starredCount} starred of {allMessages.Count})[/]",
+                showSyncAction: true, showFlaggedFilter: true);
+        }
+        else
+        {
+            SetRightPanelHeader(
+                $"[grey70]Messages[/] [grey50]({allMessages.Count})[/]",
+                showSyncAction: true, showFlaggedFilter: true);
+        }
     }
 
     private volatile bool _folderSyncInProgress;
@@ -1417,6 +1468,9 @@ public class CXPostApp : IDisposable
     public void PopulateMessageList(List<MailMessage> messages)
     {
         if (_messageTable == null) return;
+
+        if (_isFlaggedFilterActive)
+            messages = messages.Where(m => m.IsFlagged).ToList();
 
         // During search: results span multiple folders — use FolderId+Uid as composite key
         // for in-place updates instead of clearing and rebuilding
@@ -1731,7 +1785,7 @@ public class CXPostApp : IDisposable
         }
 
         if (!_isSearchActive && GetCheckedCount() == 0 && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
-            SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]", showSyncAction: true);
+            SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]", showSyncAction: true, showFlaggedFilter: true);
     }
 
     private void ReadingPaneFadeOverlay(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)
@@ -2538,6 +2592,7 @@ public class CXPostApp : IDisposable
                         {
                             DismissMessage(progressId);
                             ShowSuccess($"{checkedMsgs.Count} messages {label}");
+                            if (_isFlaggedFilterActive) RefreshFlaggedHeader();
                         });
                     }
                     catch (Exception ex) { EnqueueUiAction(() => ShowError($"Bulk flag failed: {ex.Message}")); }
@@ -2562,6 +2617,7 @@ public class CXPostApp : IDisposable
                             {
                                 DismissMessage(progressId);
                                 ShowSuccess(label);
+                                if (_isFlaggedFilterActive) RefreshFlaggedHeader();
                             });
                         }
                         catch (Exception ex) { EnqueueUiAction(() => ShowError($"Toggle flag failed: {ex.Message}")); }
