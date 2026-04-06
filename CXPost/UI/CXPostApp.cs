@@ -482,8 +482,11 @@ public class CXPostApp : IDisposable
                 AddToolbarButton("\u21a9 Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
                 AddToolbarButton("\u21aa Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
                 _toolbar.AddItem(new SeparatorControl());
-                AddToolbarButton("\u2691 Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
-                AddToolbarButton("\u2022 Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
+                var msg = GetSelectedMessage();
+                var flagLabel = msg?.IsFlagged == true ? "\u2691 Unflag" : "\u2691 Flag";
+                AddToolbarButton(flagLabel, () => SimulateKey(ConsoleKey.D, ctrl: true));
+                var readLabel = msg?.IsRead == true ? "\u2022 Unread" : "\u2022 Read";
+                AddToolbarButton(readLabel, () => SimulateKey(ConsoleKey.U, ctrl: true));
                 AddToolbarButton("\u2192 Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
                 AddToolbarButton("\u2717 Delete", () => SimulateKey(ConsoleKey.Delete));
             }
@@ -2523,7 +2526,20 @@ public class CXPostApp : IDisposable
             {
                 _ = Task.Run(async () =>
                 {
-                    try { await _messageListCoordinator.ToggleFlagMultipleAsync(checkedMsgs, folder, _cts.Token); }
+                    try
+                    {
+                        var willFlag = checkedMsgs.Any(m => !m.IsFlagged);
+                        var progressLabel = willFlag ? "Flagging" : "Unflagging";
+                        var progressId = "flag-progress";
+                        EnqueueUiAction(() => ReplaceMessage(progressId, $"{progressLabel} {checkedMsgs.Count} messages..."));
+                        await _messageListCoordinator.ToggleFlagMultipleAsync(checkedMsgs, folder, _cts.Token);
+                        var label = willFlag ? "flagged" : "unflagged";
+                        EnqueueUiAction(() =>
+                        {
+                            DismissMessage(progressId);
+                            ShowSuccess($"{checkedMsgs.Count} messages {label}");
+                        });
+                    }
                     catch (Exception ex) { EnqueueUiAction(() => ShowError($"Bulk flag failed: {ex.Message}")); }
                 });
             }
@@ -2534,7 +2550,20 @@ public class CXPostApp : IDisposable
                 {
                     _ = Task.Run(async () =>
                     {
-                        try { await _messageListCoordinator.ToggleFlagAsync(msg, folder, _cts.Token); }
+                        try
+                        {
+                            var willFlag = !msg.IsFlagged;
+                            var progressId = "flag-progress";
+                            var progressLabel = willFlag ? "Flagging" : "Unflagging";
+                            EnqueueUiAction(() => ReplaceMessage(progressId, $"{progressLabel}..."));
+                            await _messageListCoordinator.ToggleFlagAsync(msg, folder, _cts.Token);
+                            var label = willFlag ? "Flagged" : "Unflagged";
+                            EnqueueUiAction(() =>
+                            {
+                                DismissMessage(progressId);
+                                ShowSuccess(label);
+                            });
+                        }
                         catch (Exception ex) { EnqueueUiAction(() => ShowError($"Toggle flag failed: {ex.Message}")); }
                     });
                 }
@@ -2549,7 +2578,20 @@ public class CXPostApp : IDisposable
             {
                 _ = Task.Run(async () =>
                 {
-                    try { await _messageListCoordinator.ToggleReadMultipleAsync(checkedMsgs, folder, _cts.Token); }
+                    try
+                    {
+                        var willRead = checkedMsgs.Any(m => !m.IsRead);
+                        var progressId = "read-progress";
+                        var progressLabel = willRead ? "Marking as read" : "Marking as unread";
+                        EnqueueUiAction(() => ReplaceMessage(progressId, $"{progressLabel} {checkedMsgs.Count} messages..."));
+                        await _messageListCoordinator.ToggleReadMultipleAsync(checkedMsgs, folder, _cts.Token);
+                        var label = willRead ? "read" : "unread";
+                        EnqueueUiAction(() =>
+                        {
+                            DismissMessage(progressId);
+                            ShowSuccess($"{checkedMsgs.Count} messages marked {label}");
+                        });
+                    }
                     catch (Exception ex) { EnqueueUiAction(() => ShowError($"Bulk read toggle failed: {ex.Message}")); }
                 });
             }
@@ -2560,7 +2602,20 @@ public class CXPostApp : IDisposable
                 {
                     _ = Task.Run(async () =>
                     {
-                        try { await _messageListCoordinator.ToggleReadAsync(msg, folder, _cts.Token); }
+                        try
+                        {
+                            var willRead = !msg.IsRead;
+                            var progressId = "read-progress";
+                            var progressLabel = willRead ? "Marking as read" : "Marking as unread";
+                            EnqueueUiAction(() => ReplaceMessage(progressId, $"{progressLabel}..."));
+                            await _messageListCoordinator.ToggleReadAsync(msg, folder, _cts.Token);
+                            var label = willRead ? "Marked as read" : "Marked as unread";
+                            EnqueueUiAction(() =>
+                            {
+                                DismissMessage(progressId);
+                                ShowSuccess(label);
+                            });
+                        }
                         catch (Exception ex) { EnqueueUiAction(() => ShowError($"Toggle read failed: {ex.Message}")); }
                     });
                 }
