@@ -8,3 +8,5 @@ obj/
 CLAUDE.md
 docs/superpowers/
 .worktrees/
+
+.lazydotide.workspace
