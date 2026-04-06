@@ -37,6 +37,8 @@ public class ConfigService : IConfigService
             .WithNamingConvention(UnderscoredNamingConvention.Instance)
             .Build();
 
-        File.WriteAllText(_configPath, serializer.Serialize(config));
+        var tempPath = _configPath + ".tmp";
+        File.WriteAllText(tempPath, serializer.Serialize(config));
+        File.Move(tempPath, _configPath, overwrite: true);
     }
 }

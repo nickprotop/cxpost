@@ -25,11 +25,13 @@ public class CacheService : ICacheService
 
     public void SyncHeaders(int folderId, List<MailMessage> messages)
     {
+        using var tx = _repo.BeginTransaction();
         foreach (var msg in messages)
         {
             msg.FolderId = folderId;
             _repo.UpsertMessage(msg);
         }
+        tx.Commit();
     }
 
     public List<MailMessage> GetMessages(int folderId) => _repo.GetMessages(folderId);

@@ -106,8 +106,18 @@ public class MessageListCoordinator
         RefreshMessageList();
 
         // Sync to server with ephemeral connection
-        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
-        await imap.SetFlagsAsync(folder.Path, message.Uid, isFlagged: newFlag, ct: ct);
+        try
+        {
+            using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+            await imap.SetFlagsAsync(folder.Path, message.Uid, isFlagged: newFlag, ct: ct);
+        }
+        catch
+        {
+            _cache.UpdateFlags(folder.Id, message.Uid, message.IsRead, !newFlag);
+            message.IsFlagged = !newFlag;
+            RefreshMessageList();
+            throw;
+        }
     }
 
     public async Task ToggleReadAsync(MailMessage message, MailFolder folder, CancellationToken ct)
@@ -123,8 +133,18 @@ public class MessageListCoordinator
         RefreshMessageList();
 
         // Sync to server with ephemeral connection
-        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
-        await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: newRead, ct: ct);
+        try
+        {
+            using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+            await imap.SetFlagsAsync(folder.Path, message.Uid, isRead: newRead, ct: ct);
+        }
+        catch
+        {
+            _cache.UpdateFlags(folder.Id, message.Uid, !newRead, message.IsFlagged);
+            message.IsRead = !newRead;
+            RefreshMessageList();
+            throw;
+        }
     }
 
     // ── Bulk Operations ──────────────────────────────────────────────────
@@ -143,9 +163,22 @@ public class MessageListCoordinator
         }
         RefreshMessageList();
 
-        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
-        foreach (var msg in messages)
-            await imap.SetFlagsAsync(folder.Path, msg.Uid, isFlagged: newFlag, ct: ct);
+        try
+        {
+            using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+            foreach (var msg in messages)
+                await imap.SetFlagsAsync(folder.Path, msg.Uid, isFlagged: newFlag, ct: ct);
+        }
+        catch
+        {
+            foreach (var msg in messages)
+            {
+                _cache.UpdateFlags(folder.Id, msg.Uid, msg.IsRead, !newFlag);
+                msg.IsFlagged = !newFlag;
+            }
+            RefreshMessageList();
+            throw;
+        }
     }
 
     public async Task ToggleReadMultipleAsync(List<MailMessage> messages, MailFolder folder, CancellationToken ct)
@@ -161,9 +194,22 @@ public class MessageListCoordinator
         }
         RefreshMessageList();
 
-        using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
-        foreach (var msg in messages)
-            await imap.SetFlagsAsync(folder.Path, msg.Uid, isRead: newRead, ct: ct);
+        try
+        {
+            using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+            foreach (var msg in messages)
+                await imap.SetFlagsAsync(folder.Path, msg.Uid, isRead: newRead, ct: ct);
+        }
+        catch
+        {
+            foreach (var msg in messages)
+            {
+                _cache.UpdateFlags(folder.Id, msg.Uid, !newRead, msg.IsFlagged);
+                msg.IsRead = !newRead;
+            }
+            RefreshMessageList();
+            throw;
+        }
     }
 
     public void DeleteMultipleOptimistic(List<MailMessage> messages, MailFolder folder, CancellationToken ct)

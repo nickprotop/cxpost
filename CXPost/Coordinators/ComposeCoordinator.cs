@@ -90,6 +90,11 @@ public class ComposeCoordinator
 
         if (attachmentPaths != null && attachmentPaths.Count > 0)
         {
+            var totalSize = attachmentPaths.Sum(p => new FileInfo(p).Length);
+            if (totalSize > 25 * 1024 * 1024)
+                throw new InvalidOperationException(
+                    $"Total attachment size ({totalSize / (1024.0 * 1024.0):F1} MB) exceeds 25 MB limit");
+
             var multipart = new Multipart("mixed");
             multipart.Add(new TextPart("plain") { Text = bodyWithSig });
 

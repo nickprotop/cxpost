@@ -334,7 +334,7 @@ public class MailSyncCoordinator
             {
                 await _imapFactory.EnsureConnectedAsync(idleImap, account, ct);
 
-                var debounceTimer = new System.Threading.Timer(_ =>
+                using var debounceTimer = new System.Threading.Timer(_ =>
                 {
                     var folder = _cache.GetFolders(account.Id).FirstOrDefault(f => f.Path == folderPath);
                     if (folder != null && !_syncingFolderIds.ContainsKey(folder.Id))

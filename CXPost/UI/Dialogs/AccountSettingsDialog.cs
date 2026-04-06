@@ -381,6 +381,17 @@ public class AccountSettingsDialog : DialogBase<Account?>
         account.DraftsFolderPath = _draftsPathField?.Input?.Trim() ?? "";
         account.SpamFolderPath = _spamPathField?.Input?.Trim() ?? "";
 
+        if (string.IsNullOrWhiteSpace(account.Email))
+        {
+            _emailField?.RequestFocus();
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(account.ImapHost))
+        {
+            _imapHostField?.RequestFocus();
+            return;
+        }
+
         CloseWithResult(account);
     }
 

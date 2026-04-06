@@ -88,8 +88,8 @@ public class CXPostApp : IDisposable
     private float _syncPulsePhase;
 
     // Search & filter state
-    private bool _isFlaggedFilterActive;
-    private bool _isSearchActive;
+    private volatile bool _isFlaggedFilterActive;
+    private volatile bool _isSearchActive;
     public bool IsSearchActive => _isSearchActive;
     private string? _activeSearchQuery;
     private readonly List<string> _recentSearches = [];
@@ -559,8 +559,11 @@ public class CXPostApp : IDisposable
             {
                 _helpBar.Add("Ctrl+R", "Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
                 _helpBar.Add("Ctrl+F", "Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
-                _helpBar.Add("Ctrl+U", "Unread", () => SimulateKey(ConsoleKey.U, ctrl: true));
-                _helpBar.Add("Ctrl+D", "Flag", () => SimulateKey(ConsoleKey.D, ctrl: true));
+                var msg = GetSelectedMessage();
+                var readLabel = msg?.IsRead == true ? "Unread" : "Read";
+                var flagLabel = msg?.IsFlagged == true ? "Unflag" : "Flag";
+                _helpBar.Add("Ctrl+U", readLabel, () => SimulateKey(ConsoleKey.U, ctrl: true));
+                _helpBar.Add("Ctrl+D", flagLabel, () => SimulateKey(ConsoleKey.D, ctrl: true));
                 _helpBar.Add("Del", "Delete", () => SimulateKey(ConsoleKey.Delete));
                 _helpBar.Add("Ctrl+M", "Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
             }
@@ -648,7 +651,14 @@ public class CXPostApp : IDisposable
                         EnqueueUiAction(() => _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), true));
                     }
                     catch (OperationCanceledException) { break; }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        EnqueueUiAction(() =>
+                        {
+                            _statusBar.UpdateConnectionStatus(GetTotalUnreadCount(), false);
+                            ShowError($"Sync failed: {ex.Message}");
+                        });
+                    }
                 }
             }, loopCts.Token);
         }
@@ -1738,8 +1748,12 @@ public class CXPostApp : IDisposable
             $"  [{ColorScheme.MutedMarkup}]From:[/]  {MarkupParser.Escape(msg.FromName ?? "")} <{MarkupParser.Escape(msg.FromAddress ?? "")}>",
             $"  [{ColorScheme.MutedMarkup}]Date:[/]  {msg.Date:MMMM d, yyyy h:mm tt}",
             $"  [{ColorScheme.MutedMarkup}]To:[/]    {MarkupParser.Escape(MessageFormatter.FormatAddresses(msg.ToAddresses))}",
-            ""
         };
+        if (!string.IsNullOrEmpty(msg.CcAddresses))
+        {
+            headerLines.Add($"  [{ColorScheme.MutedMarkup}]Cc:[/]    {MarkupParser.Escape(MessageFormatter.FormatAddresses(msg.CcAddresses))}");
+        }
+        headerLines.Add("");
         var headerControl = Controls.Markup().Build();
         headerControl.HorizontalAlignment = HorizontalAlignment.Stretch;
         headerControl.SetContent(headerLines);
@@ -2404,7 +2418,12 @@ public class CXPostApp : IDisposable
         {
             _ = Task.Run(async () =>
             {
-                var dialog = new SearchDialog(_recentSearches);
+                List<string> recentCopy;
+                lock (_searchLock)
+                {
+                    recentCopy = new List<string>(_recentSearches);
+                }
+                var dialog = new SearchDialog(recentCopy);
                 var query = await dialog.ShowAsync(_ws);
                 if (query != null)
                 {
@@ -2680,11 +2699,13 @@ public class CXPostApp : IDisposable
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.MoveToFolder)
         {
-            var msg = GetSelectedMessage();
             var folder = _messageListCoordinator.CurrentFolder;
-            if (msg != null && folder != null)
+            var checkedMsgs = GetCheckedMessages();
+
+            if (checkedMsgs.Count > 0 && folder != null)
             {
                 var folders = _cacheService.GetFolders(folder.AccountId);
+                var count = checkedMsgs.Count;
                 _ = Task.Run(async () =>
                 {
                     var dialog = new FolderPickerDialog(folders);
@@ -2693,21 +2714,29 @@ public class CXPostApp : IDisposable
                     {
                         try
                         {
-                            var account = GetAccountForMessage(msg);
+                            EnqueueUiAction(() => ShowProgress($"Moving {count} message{(count != 1 ? "s" : "")}..."));
+                            var account = GetAccountForMessage(checkedMsgs[0]) ?? GetCurrentAccount();
                             if (account != null)
                             {
                                 using var imap = await _imapFactory.CreateConnectionAsync(account, _cts.Token);
-                                await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
+                                foreach (var msg in checkedMsgs)
+                                {
+                                    await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
+                                }
                             }
                             EnqueueUiAction(() =>
                             {
-                                _cacheService.DeleteMessage(folder.Id, msg.Uid);
-                                _messageListCoordinator.RefreshMessageList();
+                                foreach (var msg in checkedMsgs)
+                                {
+                                    _cacheService.DeleteMessage(folder.Id, msg.Uid);
+                                }
+                                ClearSelection();
                                 ClearReadingPane();
+                                _messageListCoordinator.RefreshMessageList();
                                 UpdatePreviewHeader();
                                 UpdateHelpBar();
                                 UpdateToolbar();
-                                ShowSuccess($"Moved to {dest.DisplayName}");
+                                ShowSuccess($"Moved {count} message{(count != 1 ? "s" : "")} to {dest.DisplayName}");
                             });
                         }
                         catch (Exception ex)
@@ -2716,6 +2745,45 @@ public class CXPostApp : IDisposable
                         }
                     }
                 });
+            }
+            else
+            {
+                var msg = GetSelectedMessage();
+                if (msg != null && folder != null)
+                {
+                    var folders = _cacheService.GetFolders(folder.AccountId);
+                    _ = Task.Run(async () =>
+                    {
+                        var dialog = new FolderPickerDialog(folders);
+                        var dest = await dialog.ShowAsync(_ws);
+                        if (dest != null)
+                        {
+                            try
+                            {
+                                var account = GetAccountForMessage(msg);
+                                if (account != null)
+                                {
+                                    using var imap = await _imapFactory.CreateConnectionAsync(account, _cts.Token);
+                                    await imap.MoveMessageAsync(folder.Path, dest.Path, msg.Uid, _cts.Token);
+                                }
+                                EnqueueUiAction(() =>
+                                {
+                                    _cacheService.DeleteMessage(folder.Id, msg.Uid);
+                                    _messageListCoordinator.RefreshMessageList();
+                                    ClearReadingPane();
+                                    UpdatePreviewHeader();
+                                    UpdateHelpBar();
+                                    UpdateToolbar();
+                                    ShowSuccess($"Moved to {dest.DisplayName}");
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                EnqueueUiAction(() => ShowError($"Move failed: {ex.Message}"));
+                            }
+                        }
+                    });
+                }
             }
             e.Handled = true;
         }

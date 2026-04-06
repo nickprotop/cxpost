@@ -202,7 +202,7 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 
         var discardButton = Controls.Button("[grey93]Discard [cyan1](Esc)[/][/]")
             .WithBackgroundColor(Color.Transparent)
-            .OnClick((s, e) => CloseWithResult(null))
+            .OnClick((s, e) => DiscardWithConfirmation())
             .Build();
 
         var toolbar = Controls.Toolbar()
@@ -227,7 +227,10 @@ public class ComposeDialog : DialogBase<ComposeResult?>
     {
         var to = _toField?.Input ?? "";
         if (string.IsNullOrWhiteSpace(to))
+        {
+            _toField?.RequestFocus();
             return;
+        }
 
         var account = SelectedAccount;
         if (account == null) return;
@@ -280,10 +283,41 @@ public class ComposeDialog : DialogBase<ComposeResult?>
             // A control (e.g. multiline editor) already handled Escape — don't close
             e.Handled = true;
         }
+        else if (e.KeyInfo.Key == ConsoleKey.Escape && HasUnsavedContent())
+        {
+            DiscardWithConfirmation();
+            e.Handled = true;
+        }
         else
         {
             base.OnKeyPressed(sender, e);
         }
+    }
+
+    private bool HasUnsavedContent()
+    {
+        return (_bodyEditor?.Content ?? "") != _initialBody
+            || (_toField?.Input ?? "") != _initialTo
+            || (_ccField?.Input ?? "") != _initialCc
+            || (_subjectField?.Input ?? "") != _initialSubject
+            || _attachmentPaths.Count > 0;
+    }
+
+    private void DiscardWithConfirmation()
+    {
+        if (!HasUnsavedContent())
+        {
+            CloseWithResult(null);
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            var confirmed = await new ConfirmDialog("Discard Message", "Discard this message?")
+                .ShowAsync(WindowSystem);
+            if (confirmed)
+                CloseWithResult(null);
+        });
     }
 
     private bool IsEditing()

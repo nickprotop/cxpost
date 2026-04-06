@@ -12,6 +12,9 @@ public class MailRepository
         _connection = connection;
     }
 
+    public SqliteTransaction BeginTransaction()
+        => _connection.BeginTransaction();
+
     public void UpsertFolder(MailFolder folder)
     {
         using var cmd = _connection.CreateCommand();
