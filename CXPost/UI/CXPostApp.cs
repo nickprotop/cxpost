@@ -1875,6 +1875,72 @@ public class CXPostApp : IDisposable
         }
     }
 
+    private async Task SendReplyWithAttachmentsAsync(ComposeResult result, Account account, MailMessage msg)
+    {
+        if (result.IncludeOriginalAttachments && msg.HasAttachments
+            && msg.Attachments != null && msg.Attachments.Count > 0)
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), $"cxpost-reply-{Guid.NewGuid():N}");
+            var progressId = "reply-progress";
+            try
+            {
+                EnqueueUiAction(() => ReplaceMessage(progressId, "Fetching attachments..."));
+                var paths = await _composeCoordinator.FetchMessageAttachmentsAsync(
+                    account, msg, tempDir, _cts.Token);
+
+                var totalSize = paths.Sum(p => new FileInfo(p).Length);
+                if (totalSize > 20 * 1024 * 1024)
+                {
+                    var sizeMb = totalSize / (1024.0 * 1024.0);
+                    var confirm = await new ConfirmDialog(
+                        "Large Attachments",
+                        $"Total attachment size is {sizeMb:F1} MB. Continue sending?")
+                        .ShowAsync(_ws);
+                    if (!confirm)
+                    {
+                        EnqueueUiAction(() =>
+                        {
+                            DismissMessage(progressId);
+                            ShowInfo("Reply cancelled.");
+                        });
+                        return;
+                    }
+                }
+
+                var allPaths = new List<string>(result.AttachmentPaths);
+                allPaths.AddRange(paths);
+
+                EnqueueUiAction(() => ReplaceMessage(progressId, "Sending reply..."));
+                await _composeCoordinator.SendAsync(
+                    account, result.FromName, result.To, result.Cc,
+                    result.Subject, result.Body, allPaths, _cts.Token);
+
+                EnqueueUiAction(() =>
+                {
+                    DismissMessage(progressId);
+                    ShowSuccess($"Reply sent to {result.To}");
+                });
+            }
+            catch (Exception ex)
+            {
+                EnqueueUiAction(() =>
+                {
+                    DismissMessage(progressId);
+                    ShowError($"Reply failed: {ex.Message}");
+                });
+            }
+            finally
+            {
+                try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); }
+                catch { }
+            }
+        }
+        else
+        {
+            await SendWithProgressAsync(result);
+        }
+    }
+
     private void SaveAttachmentAs(MailMessage msg, int index)
     {
         var folder = _messageListCoordinator.CurrentFolder;
@@ -2122,10 +2188,11 @@ public class CXPostApp : IDisposable
                 _ = Task.Run(async () =>
                 {
                     var dialog = new ComposeDialog(_contactsService, _config.Accounts,
-                        defaultAccountId: account.Id, to: to, subject: subject, body: body);
+                        defaultAccountId: account.Id, to: to, subject: subject, body: body,
+                        originalAttachments: msg.Attachments);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
-                        await SendWithProgressAsync(result);
+                        await SendReplyWithAttachmentsAsync(result, account, msg);
                 });
             }
             e.Handled = true;
@@ -2140,10 +2207,11 @@ public class CXPostApp : IDisposable
                 _ = Task.Run(async () =>
                 {
                     var dialog = new ComposeDialog(_contactsService, _config.Accounts,
-                        defaultAccountId: account.Id, to: to, subject: subject, body: body);
+                        defaultAccountId: account.Id, to: to, subject: subject, body: body,
+                        originalAttachments: msg.Attachments);
                     var result = await dialog.ShowAsync(_ws);
                     if (result != null)
-                        await SendWithProgressAsync(result);
+                        await SendReplyWithAttachmentsAsync(result, account, msg);
                 });
             }
             e.Handled = true;

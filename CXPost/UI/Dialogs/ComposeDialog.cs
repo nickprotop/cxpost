@@ -157,13 +157,13 @@ public class ComposeDialog : DialogBase<ComposeResult?>
         _attachmentPanel.Visible = false;
         Modal.AddControl(_attachmentPanel);
 
-        // ── Forward attachment toggle (only in forward mode) ────────────
-        if (_isForwardMode && _originalAttachments != null && _originalAttachments.Count > 0)
+        // ── Original attachment toggle (forward and reply modes) ────────
+        if (_originalAttachments != null && _originalAttachments.Count > 0)
         {
             var totalSize = _originalAttachments.Sum(a => a.Size);
             var sizeStr = FormatFileSize(totalSize);
             _includeOriginalAttachments = Controls.Checkbox($"Include original attachments ({_originalAttachments.Count}, {sizeStr})")
-                .Checked(true)
+                .Checked(_isForwardMode)
                 .WithMargin(2, 1, 2, 0)
                 .Build();
             Modal.AddControl(_includeOriginalAttachments);
