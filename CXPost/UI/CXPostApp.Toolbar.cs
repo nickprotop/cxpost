@@ -31,54 +31,38 @@ public partial class CXPostApp
         if (checkedCount > 0)
         {
             // Bulk mode toolbar — actions apply to checked messages
-            AddToolbarButton($"\u2717 Delete ({checkedCount})", () => SimulateKey(ConsoleKey.Delete));
-            AddToolbarButton($"\u2022 Read ({checkedCount})", () => SimulateKey(ConsoleKey.U, ctrl: true));
-            AddToolbarButton($"\u2691 Flag ({checkedCount})", () => SimulateKey(ConsoleKey.D, ctrl: true));
-            AddToolbarButton($"\u2192 Move ({checkedCount})", () => SimulateKey(ConsoleKey.M, ctrl: true));
-            AddToolbarButton($"\u21aa Fwd ({checkedCount})", () => SimulateKey(ConsoleKey.F, ctrl: true));
+            AddToolbarButton($"\u2717 Delete ({checkedCount}) [{ColorScheme.MutedMarkup}]Del[/]", () => SimulateKey(ConsoleKey.Delete));
+            AddToolbarButton($"\u2022 Read ({checkedCount}) [{ColorScheme.MutedMarkup}]^U[/]", () => SimulateKey(ConsoleKey.U, ctrl: true));
+            AddToolbarButton($"\u2691 Flag ({checkedCount}) [{ColorScheme.MutedMarkup}]^D[/]", () => SimulateKey(ConsoleKey.D, ctrl: true));
+            AddToolbarButton($"\u2192 Move ({checkedCount}) [{ColorScheme.MutedMarkup}]^M[/]", () => SimulateKey(ConsoleKey.M, ctrl: true));
+            AddToolbarButton($"\u21aa Fwd ({checkedCount}) [{ColorScheme.MutedMarkup}]^F[/]", () => SimulateKey(ConsoleKey.F, ctrl: true));
             _toolbar.AddItem(new SeparatorControl());
             AddToolbarButton("\u2715 Clear", () => ClearSelection());
         }
         else
         {
             // Normal toolbar
-            AddToolbarButton("\u2709 Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
-            AddToolbarButton("\u21bb Sync", () => SimulateKey(ConsoleKey.F5));
-            AddToolbarButton("\u2315 Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
+            AddToolbarButton($"\u2709 Compose [{ColorScheme.MutedMarkup}]^N[/]", () => SimulateKey(ConsoleKey.N, ctrl: true));
+            AddToolbarButton($"\u21bb Sync [{ColorScheme.MutedMarkup}]F5[/]", () => SimulateKey(ConsoleKey.F5));
+            AddToolbarButton($"\u2315 Search [{ColorScheme.MutedMarkup}]^S[/]", () => SimulateKey(ConsoleKey.S, ctrl: true));
 
             if (!isDashboard && hasMessage)
             {
                 _toolbar.AddItem(new SeparatorControl());
-                AddToolbarButton("\u21a9 Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
-                AddToolbarButton("\u21aa Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
+                AddToolbarButton($"\u21a9 Reply [{ColorScheme.MutedMarkup}]^R[/]", () => SimulateKey(ConsoleKey.R, ctrl: true));
+                AddToolbarButton($"\u21aa Fwd [{ColorScheme.MutedMarkup}]^F[/]", () => SimulateKey(ConsoleKey.F, ctrl: true));
                 _toolbar.AddItem(new SeparatorControl());
                 var msg = GetSelectedMessage();
                 var flagLabel = msg?.IsFlagged == true ? "\u2691 Unflag" : "\u2691 Flag";
-                AddToolbarButton(flagLabel, () => SimulateKey(ConsoleKey.D, ctrl: true));
+                AddToolbarButton($"{flagLabel} [{ColorScheme.MutedMarkup}]^D[/]", () => SimulateKey(ConsoleKey.D, ctrl: true));
                 var readLabel = msg?.IsRead == true ? "\u2022 Unread" : "\u2022 Read";
-                AddToolbarButton(readLabel, () => SimulateKey(ConsoleKey.U, ctrl: true));
-                AddToolbarButton("\u2192 Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
-                AddToolbarButton("\u2717 Delete", () => SimulateKey(ConsoleKey.Delete));
+                AddToolbarButton($"{readLabel} [{ColorScheme.MutedMarkup}]^U[/]", () => SimulateKey(ConsoleKey.U, ctrl: true));
+                AddToolbarButton($"\u2192 Move [{ColorScheme.MutedMarkup}]^M[/]", () => SimulateKey(ConsoleKey.M, ctrl: true));
+                AddToolbarButton($"\u2717 Delete [{ColorScheme.MutedMarkup}]Del[/]", () => SimulateKey(ConsoleKey.Delete));
             }
 
             _toolbar.AddItem(new SeparatorControl());
-            var treeLabel = _layoutModeManager.IsFolderTreeHidden
-                ? "\u25b6 Folders"
-                : "\u25c0 Folders";
-            AddToolbarButton(treeLabel, () => ToggleFolderTree());
-
-            // Preview panel toggle (only outside read mode)
-            if (!_layoutModeManager.IsReadMode)
-            {
-                var previewLabel = _layoutModeManager.IsPreviewHidden
-                    ? "\u25b6 Preview"
-                    : "\u25c0 Preview";
-                AddToolbarButton(previewLabel, () => TogglePreview());
-            }
-
-            var layoutLabel = _currentLayout == "classic" ? "\u25eb Wide" : "\u2b12 Classic";
-            AddToolbarButton(layoutLabel, () => SimulateKey(ConsoleKey.F8));
-            AddToolbarButton("\u2699 Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
+            AddToolbarButton($"\u2699 Settings [{ColorScheme.MutedMarkup}]^,[/]", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
         }
     }
 
@@ -153,7 +137,7 @@ public partial class CXPostApp
     {
         var button = Controls.Button()
             .WithText(text)
-            .WithBorder(ButtonBorderStyle.Rounded)
+            .WithBorder(ButtonBorderStyle.None)
             .WithBackgroundColor(Color.Transparent)
             .WithBorderBackgroundColor(Color.Transparent)
             .OnClick((_, _) => onClick())
