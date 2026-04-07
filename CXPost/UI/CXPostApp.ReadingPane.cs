@@ -218,6 +218,22 @@ public partial class CXPostApp
         }
     }
 
+    private static string GetFileTypeIcon(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        return ext switch
+        {
+            ".pdf" => "\U0001f4c4",
+            ".doc" or ".docx" => "\U0001f4dd",
+            ".xls" or ".xlsx" => "\U0001f4ca",
+            ".png" or ".jpg" or ".jpeg" or ".gif" or ".svg" or ".bmp" or ".webp" => "\U0001f5bc",
+            ".zip" or ".tar" or ".gz" or ".rar" or ".7z" => "\U0001f4e6",
+            ".mp3" or ".wav" or ".ogg" or ".flac" => "\U0001f3b5",
+            ".mp4" or ".mov" or ".avi" or ".mkv" => "\U0001f3ac",
+            _ => "\U0001f4ce"
+        };
+    }
+
     private void TriggerReadingPaneFadeIn()
     {
         if (_readingPane == null || _mainWindow == null) return;
@@ -266,20 +282,16 @@ public partial class CXPostApp
             var sizeStr = FormatFileSize(att.Size);
             var idx = att.Index;
             var fileName = att.FileName;
+            var icon = GetFileTypeIcon(fileName);
 
-            var attLabel = Controls.Markup(
-                $"  [{ColorScheme.PrimaryMarkup}][[{idx + 1}]][/] {MarkupParser.Escape(fileName)}  [grey50]{sizeStr}[/]")
-                .WithMargin(2, 0, 2, 0)
-                .Build();
-            _readingPane.AddControl(attLabel);
-
-            var attActions = Controls.StatusBar()
+            var attBar = Controls.StatusBar()
+                .AddLeftText($" {icon} {MarkupParser.Escape(fileName)}  [grey50]{sizeStr}[/]")
                 .AddLeft($"{idx + 1}", "Save", () => SaveAttachmentQuick(msg, idx, fileName))
                 .AddLeft($"Ctrl+{idx + 1}", "Save As", () => SaveAttachmentAs(msg, idx))
-                .WithMargin(4, 0, 2, 0)
+                .WithMargin(2, 0, 2, 0)
                 .Build();
-            attActions.BackgroundColor = Color.Transparent;
-            _readingPane.AddControl(attActions);
+            attBar.BackgroundColor = Color.Transparent;
+            _readingPane.AddControl(attBar);
         }
 
         var rule2 = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
