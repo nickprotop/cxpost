@@ -1,7 +1,10 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Animation;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Helpers;
+using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
+using SharpConsoleUI.Windows;
 using CXPost.Models;
 using CXPost.UI.Components;
 
@@ -79,9 +82,48 @@ public partial class CXPostApp
             // Toggle visibility of splitter + preview header + reading pane
             _layoutModeManager.TogglePreview();
             var hide = _layoutModeManager.IsPreviewHidden;
-            if (_listReadingSplitter != null) _listReadingSplitter.Visible = !hide;
-            if (_previewPanelHeader != null) _previewPanelHeader.Visible = !hide;
-            if (_readingPane != null) _readingPane.Visible = !hide;
+
+            if (hide)
+            {
+                // Fade out the reading pane area before hiding
+                if (_readingPane != null && _mainWindow != null)
+                {
+                    float fadeOut = 0f;
+                    WindowRenderer.BufferPaintDelegate? fadeHandler = null;
+                    fadeHandler = (buffer, dirtyRegion, clipRect) =>
+                    {
+                        if (fadeOut <= 0.01f || _readingPane == null) return;
+                        var paneRect = new LayoutRect(
+                            _readingPane.ActualX, _readingPane.ActualY,
+                            _readingPane.ActualWidth, _readingPane.ActualHeight);
+                        ColorBlendHelper.ApplyColorOverlay(buffer, Color.Black, fadeOut, 0.5f, paneRect);
+                    };
+                    _mainWindow.PostBufferPaint += fadeHandler;
+                    _ws.Animations.Animate(
+                        from: 0f, to: 0.4f,
+                        duration: TimeSpan.FromMilliseconds(150),
+                        easing: EasingFunctions.EaseOut,
+                        onUpdate: t =>
+                        {
+                            fadeOut = t;
+                            _mainWindow?.Invalidate(redrawAll: true);
+                        },
+                        onComplete: () =>
+                        {
+                            _mainWindow!.PostBufferPaint -= fadeHandler;
+                            if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+                            if (_previewPanelHeader != null) _previewPanelHeader.Visible = false;
+                            if (_readingPane != null) _readingPane.Visible = false;
+                        });
+                }
+            }
+            else
+            {
+                if (_listReadingSplitter != null) _listReadingSplitter.Visible = true;
+                if (_previewPanelHeader != null) _previewPanelHeader.Visible = true;
+                if (_readingPane != null) _readingPane.Visible = true;
+                TriggerReadingPaneFadeIn();
+            }
         }
 
         UpdateFocusDimmingPanes();
