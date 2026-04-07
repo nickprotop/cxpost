@@ -751,6 +751,7 @@ public partial class CXPostApp
                 ShowMessageListView();
 
             UpdateToolbar();
+            UpdateBottomBar();
             e.Handled = true;
         }
         else if (ctrl && e.KeyInfo.Key == KeyBindings.Settings)

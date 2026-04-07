@@ -88,30 +88,31 @@ public class LayoutModeManagerTests
     public void ToggleStrip_HidesStrip()
     {
         var mgr = new LayoutModeManager();
-        mgr.EnterReadMode();
-        mgr.ToggleStrip();
+        mgr.EnterReadMode();  // strip starts visible
+        mgr.ToggleStrip();    // visible → hidden
         Assert.False(mgr.IsStripVisible);
     }
 
     [Fact]
-    public void ToggleStrip_Twice_ShowsStrip()
+    public void ToggleStrip_Twice_ReturnsToVisible()
     {
         var mgr = new LayoutModeManager();
         mgr.EnterReadMode();
-        mgr.ToggleStrip();
-        mgr.ToggleStrip();
+        mgr.ToggleStrip(); // visible → hidden
+        mgr.ToggleStrip(); // hidden → visible
         Assert.True(mgr.IsStripVisible);
     }
 
     [Fact]
-    public void ExitReadMode_ResetsStripVisibility()
+    public void StripVisibility_RememberedAcrossReadModeSessions()
     {
         var mgr = new LayoutModeManager();
         mgr.EnterReadMode();
-        mgr.ToggleStrip();
+        mgr.ToggleStrip(); // visible → hidden
+        Assert.False(mgr.IsStripVisible);
         mgr.ExitReadMode();
         mgr.EnterReadMode();
-        Assert.True(mgr.IsStripVisible);
+        Assert.False(mgr.IsStripVisible); // remembers last preference
     }
 
     [Fact]
@@ -123,16 +124,46 @@ public class LayoutModeManagerTests
     }
 
     [Fact]
-    public void TreeAndReadMode_Independent()
+    public void EnterReadMode_AutoHidesFolderTree()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleFolderTree();
+        Assert.False(mgr.IsFolderTreeHidden);
         mgr.EnterReadMode();
-        Assert.True(mgr.IsFolderTreeHidden);
-        Assert.True(mgr.IsReadMode);
+        Assert.True(mgr.IsFolderTreeHidden); // auto-hidden
+    }
+
+    [Fact]
+    public void ExitReadMode_RestoresFolderTreeState()
+    {
+        var mgr = new LayoutModeManager();
+        Assert.False(mgr.IsFolderTreeHidden); // visible before
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsFolderTreeHidden); // auto-hidden
         mgr.ExitReadMode();
+        Assert.False(mgr.IsFolderTreeHidden); // restored to visible
+    }
+
+    [Fact]
+    public void ExitReadMode_KeepsManualFolderTreeChange()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.EnterReadMode();
+        mgr.ToggleFolderTree(); // manually show folders in read mode
+        Assert.False(mgr.IsFolderTreeHidden);
+        mgr.ExitReadMode();
+        Assert.False(mgr.IsFolderTreeHidden); // keeps manual override
+    }
+
+    [Fact]
+    public void ExitReadMode_WhenTreeWasAlreadyHidden_RestoresHidden()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.ToggleFolderTree(); // hide before entering read mode
         Assert.True(mgr.IsFolderTreeHidden);
-        Assert.False(mgr.IsReadMode);
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsFolderTreeHidden); // still hidden
+        mgr.ExitReadMode();
+        Assert.True(mgr.IsFolderTreeHidden); // restored to hidden
     }
 
     [Fact]
@@ -168,18 +199,17 @@ public class LayoutModeManagerTests
     }
 
     [Fact]
-    public void AllToggles_Independent()
+    public void PreviewToggle_IndependentOfReadMode()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleFolderTree();
         mgr.TogglePreview();
-        mgr.EnterReadMode();
-        Assert.True(mgr.IsFolderTreeHidden);
         Assert.True(mgr.IsPreviewHidden);
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsPreviewHidden); // preview state preserved
         Assert.True(mgr.IsReadMode);
         mgr.TogglePreview();
-        Assert.True(mgr.IsFolderTreeHidden);
         Assert.False(mgr.IsPreviewHidden);
-        Assert.True(mgr.IsReadMode);
+        mgr.ExitReadMode();
+        Assert.False(mgr.IsPreviewHidden); // still not hidden
     }
 }

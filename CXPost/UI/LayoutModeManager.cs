@@ -12,8 +12,6 @@ public class LayoutModeManager
     public bool IsFolderTreeHidden { get; private set; }
     private int _savedFolderWidth = 28;
 
-    public void ToggleFolderTree() => IsFolderTreeHidden = !IsFolderTreeHidden;
-
     public void SaveFolderWidth(int width)
     {
         if (width > 0) _savedFolderWidth = width;
@@ -38,19 +36,38 @@ public class LayoutModeManager
     public bool IsReadMode { get; private set; }
     public bool IsStripVisible { get; private set; } = true;
     private int _savedMessageColumnWidth;
+    private bool _folderTreeHiddenBeforeReadMode;
+    private bool _folderTreeChangedInReadMode;
 
     public const int StripWidth = 30;
 
     public void EnterReadMode()
     {
+        // Save folder state and auto-hide for reading space
+        _folderTreeHiddenBeforeReadMode = IsFolderTreeHidden;
+        _folderTreeChangedInReadMode = false;
+        IsFolderTreeHidden = true;
         IsReadMode = true;
-        IsStripVisible = true;
+        // IsStripVisible retains its last value — remembers user preference
     }
 
     public void ExitReadMode()
     {
         IsReadMode = false;
-        IsStripVisible = true;
+        // Restore folder tree state unless user manually changed it in read mode
+        if (!_folderTreeChangedInReadMode)
+            IsFolderTreeHidden = _folderTreeHiddenBeforeReadMode;
+        // IsStripVisible retains its value for next entry
+    }
+
+    /// <summary>
+    /// Toggle folder tree. When in read mode, marks as manually changed
+    /// so ExitReadMode won't override the user's choice.
+    /// </summary>
+    public void ToggleFolderTree()
+    {
+        IsFolderTreeHidden = !IsFolderTreeHidden;
+        if (IsReadMode) _folderTreeChangedInReadMode = true;
     }
 
     public void ToggleStrip() => IsStripVisible = !IsStripVisible;
