@@ -139,6 +139,15 @@ public partial class CXPostApp
                 _bottomBar.AddRightText($"[{readColor}]Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
                     () => { if (_layoutModeManager.IsReadMode) ExitReadMode(); else EnterReadMode(); });
 
+                // Strip toggle (only in read mode)
+                if (_layoutModeManager.IsReadMode)
+                {
+                    _bottomBar.AddRightSeparator();
+                    var stripColor = _layoutModeManager.IsStripVisible ? ColorScheme.PrimaryMarkup : ColorScheme.MutedMarkup;
+                    _bottomBar.AddRightText($"[{stripColor}]List[/] [{ColorScheme.MutedMarkup}]^B[/]",
+                        () => ToggleReadStrip());
+                }
+
                 // Layout toggle (hidden in read mode — read mode has its own grid)
                 if (!_layoutModeManager.IsReadMode)
                 {

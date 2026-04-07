@@ -341,16 +341,6 @@ public partial class CXPostApp
         // Right side buttons
         if (GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
         {
-            // Strip toggle in read mode (Ctrl+B)
-            if (_layoutModeManager.IsReadMode)
-            {
-                var stripLabel = _layoutModeManager.IsStripVisible
-                    ? $"[{ColorScheme.MutedMarkup}]\u25c0 Hide List[/]"
-                    : $"[{ColorScheme.PrimaryMarkup}]\u25b6 Show List[/]";
-                _previewPanelHeader.AddRightText(stripLabel, () => ToggleReadStrip());
-                _previewPanelHeader.AddRightSeparator();
-            }
-
             // Read/List mode toggle (F4)
             if (_layoutModeManager.IsReadMode)
             {

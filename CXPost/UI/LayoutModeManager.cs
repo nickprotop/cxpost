@@ -39,7 +39,7 @@ public class LayoutModeManager
     private bool _folderTreeHiddenBeforeReadMode;
     private bool _folderTreeChangedInReadMode;
 
-    public const int StripWidth = 30;
+    public const int StripWidth = 20;
 
     public void EnterReadMode()
     {
