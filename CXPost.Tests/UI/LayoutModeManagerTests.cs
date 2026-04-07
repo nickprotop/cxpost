@@ -5,111 +5,133 @@ namespace CXPost.Tests.UI;
 public class LayoutModeManagerTests
 {
     [Fact]
-    public void InitialMode_IsCompact()
+    public void Initial_FolderTreeVisible()
     {
         var mgr = new LayoutModeManager();
-        Assert.Equal(LayoutMode.Compact, mgr.CurrentMode);
+        Assert.False(mgr.IsFolderTreeHidden);
     }
 
     [Fact]
-    public void ToggleFocus_FromCompact_EntersFocus()
+    public void ToggleFolderTree_HidesTree()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleFocus();
-        Assert.Equal(LayoutMode.Focus, mgr.CurrentMode);
-        Assert.Equal(LayoutMode.Compact, mgr.PreviousMode);
+        mgr.ToggleFolderTree();
+        Assert.True(mgr.IsFolderTreeHidden);
     }
 
     [Fact]
-    public void ToggleFocus_FromFocus_ReturnsToCompact()
+    public void ToggleFolderTree_Twice_ShowsTree()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleFocus();
-        mgr.ToggleFocus();
-        Assert.Equal(LayoutMode.Compact, mgr.CurrentMode);
+        mgr.ToggleFolderTree();
+        mgr.ToggleFolderTree();
+        Assert.False(mgr.IsFolderTreeHidden);
     }
 
     [Fact]
-    public void ToggleTriage_FromCompact_EntersTriage()
+    public void SaveFolderWidth_PreservesWidth()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleTriage();
-        Assert.Equal(LayoutMode.Triage, mgr.CurrentMode);
-        Assert.Equal(LayoutMode.Compact, mgr.PreviousMode);
+        mgr.SaveFolderWidth(35);
+        Assert.Equal(35, mgr.GetSavedFolderWidth());
     }
 
     [Fact]
-    public void ToggleTriage_FromTriage_ReturnsToCompact()
+    public void SaveFolderWidth_IgnoresZero()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleTriage();
-        mgr.ToggleTriage();
-        Assert.Equal(LayoutMode.Compact, mgr.CurrentMode);
+        mgr.SaveFolderWidth(35);
+        mgr.SaveFolderWidth(0);
+        Assert.Equal(35, mgr.GetSavedFolderWidth());
     }
 
     [Fact]
-    public void ToggleFocus_FromTriage_SwitchesToFocus()
+    public void DefaultFolderWidth_Is28()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleTriage();
-        mgr.ToggleFocus();
-        Assert.Equal(LayoutMode.Focus, mgr.CurrentMode);
-        Assert.Equal(LayoutMode.Triage, mgr.PreviousMode);
+        Assert.Equal(28, mgr.GetSavedFolderWidth());
     }
 
     [Fact]
-    public void GoBack_ReturnsToCompactByDefault()
+    public void Initial_NotInReadMode()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleFocus();
-        mgr.GoBack();
-        Assert.Equal(LayoutMode.Compact, mgr.CurrentMode);
+        Assert.False(mgr.IsReadMode);
     }
 
     [Fact]
-    public void GoBack_FromFocusEnteredViaTriage_ReturnsToTriage()
+    public void EnterReadMode_SetsFlag()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleTriage();
-        mgr.EnterFocusFromTriage();
-        Assert.Equal(LayoutMode.Focus, mgr.CurrentMode);
-        mgr.GoBack();
-        Assert.Equal(LayoutMode.Triage, mgr.CurrentMode);
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsReadMode);
     }
 
     [Fact]
-    public void SavedWidths_PreservedAcrossTransitions()
+    public void ExitReadMode_ClearsFlag()
     {
         var mgr = new LayoutModeManager();
-        mgr.SaveCompactWidths(folderWidth: 28, messageWidth: 200, previewWidth: 150);
-        mgr.ToggleFocus();
-        mgr.GoBack();
-
-        var (folder, message, preview) = mgr.GetSavedCompactWidths();
-        Assert.Equal(28, folder);
-        Assert.Equal(200, message);
-        Assert.Equal(150, preview);
+        mgr.EnterReadMode();
+        mgr.ExitReadMode();
+        Assert.False(mgr.IsReadMode);
     }
 
     [Fact]
-    public void GetTargetWidths_Focus_ReturnsCorrectWidths()
+    public void ReadMode_StripVisibleByDefault()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleFocus();
-        var (folder, message, preview) = mgr.GetTargetWidths();
-        Assert.Equal(0, folder);
-        Assert.Equal(140, message);
-        Assert.Null(preview);
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsStripVisible);
     }
 
     [Fact]
-    public void GetTargetWidths_Triage_ReturnsCorrectWidths()
+    public void ToggleStrip_HidesStrip()
     {
         var mgr = new LayoutModeManager();
-        mgr.ToggleTriage();
-        var (folder, message, preview) = mgr.GetTargetWidths();
-        Assert.Equal(80, folder);
-        Assert.Null(message);
-        Assert.Equal(0, preview);
+        mgr.EnterReadMode();
+        mgr.ToggleStrip();
+        Assert.False(mgr.IsStripVisible);
+    }
+
+    [Fact]
+    public void ToggleStrip_Twice_ShowsStrip()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.EnterReadMode();
+        mgr.ToggleStrip();
+        mgr.ToggleStrip();
+        Assert.True(mgr.IsStripVisible);
+    }
+
+    [Fact]
+    public void ExitReadMode_ResetsStripVisibility()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.EnterReadMode();
+        mgr.ToggleStrip();
+        mgr.ExitReadMode();
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsStripVisible);
+    }
+
+    [Fact]
+    public void SaveMessageColumnWidth_PreservesWidth()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.SaveMessageColumnWidth(200);
+        Assert.Equal(200, mgr.GetSavedMessageColumnWidth());
+    }
+
+    [Fact]
+    public void TreeAndReadMode_Independent()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.ToggleFolderTree();
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsFolderTreeHidden);
+        Assert.True(mgr.IsReadMode);
+        mgr.ExitReadMode();
+        Assert.True(mgr.IsFolderTreeHidden);
+        Assert.False(mgr.IsReadMode);
     }
 }
