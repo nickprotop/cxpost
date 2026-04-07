@@ -45,7 +45,7 @@ public partial class CXPostApp
             }
         }
 
-        UpdateFocusDimmingPanes();
+
         UpdateToolbar();
         UpdateBottomBar();
     }
@@ -126,7 +126,7 @@ public partial class CXPostApp
             }
         }
 
-        UpdateFocusDimmingPanes();
+
         UpdateToolbar();
         UpdateBottomBar();
     }
@@ -149,7 +149,7 @@ public partial class CXPostApp
         RebuildMainGrid();
         TriggerReadingPaneFadeIn();
 
-        UpdateFocusDimmingPanes();
+
         UpdateToolbar();
         UpdateBottomBar();
         var msg = GetSelectedMessage();
@@ -172,7 +172,7 @@ public partial class CXPostApp
         _layoutModeManager.ExitReadMode();
         RebuildMainGrid();
 
-        UpdateFocusDimmingPanes();
+
         UpdateToolbar();
         UpdateBottomBar();
         var msg = GetSelectedMessage();
@@ -197,7 +197,7 @@ public partial class CXPostApp
         else
             _mainGrid.AnimateColumnWidth(stripColIdx, 0, duration);
 
-        UpdateFocusDimmingPanes();
+
         var msg = GetSelectedMessage();
         if (msg != null) UpdatePreviewHeader(msg);
         else UpdatePreviewHeader();

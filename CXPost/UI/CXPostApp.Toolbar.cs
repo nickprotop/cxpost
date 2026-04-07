@@ -83,7 +83,7 @@ public partial class CXPostApp
             {
                 _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Esc[/][grey70]:Back[/]");
                 _bottomBar.AddLeftSeparator();
-                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u2191\u2193[/][grey70]:Navigate[/]");
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]j/k[/][grey70]:Next/Prev[/]");
             }
             else if (checkedCount > 0)
             {
@@ -113,7 +113,7 @@ public partial class CXPostApp
                     _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Space[/][grey70]:Check[/]");
                     _bottomBar.AddLeftSeparator();
                 }
-                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u2191\u2193[/][grey70]:Navigate[/]");
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]j/k[/][grey70]:Next/Prev[/]");
             }
 
             // ── Right side: view toggles ─────────────────────────────────────

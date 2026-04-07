@@ -347,9 +347,6 @@ public partial class CXPostApp : IDisposable
             .OnKeyPressed(OnKeyPressed)
             .Build();
 
-        // Focus dimming overlays (replaces standalone reading pane fade)
-        InitFocusDimming();
-
         // Confirm before quit
         _mainWindow.OnClosing += (_, args) =>
         {

@@ -221,7 +221,6 @@ public partial class CXPostApp
         UpdatePreviewHeader(msg);
         UpdateBottomBar();
         UpdateToolbar();
-        RetainMessageListFocus();
 
         _messageListCoordinator.SelectMessage(msg);
 
@@ -259,7 +258,6 @@ public partial class CXPostApp
                             {
                                 ShowMessagePreview(capturedMsg);
                                 TriggerReadingPaneFadeIn();
-                                RetainMessageListFocus();
                             }
                         });
                     }
@@ -405,17 +403,25 @@ public partial class CXPostApp
     }
 
     /// <summary>
-    /// Re-focuses the message table if it was the last focused control.
-    /// Prevents body fetch / mark-as-read from stealing focus to reading pane.
+    /// Re-focuses the message table only if it already had focus or if focus was lost
+    /// (e.g. the focused control was destroyed by a refresh). Never steals focus from
+    /// other interactive controls like the folder tree or reading pane.
     /// </summary>
     public void RetainMessageListFocus()
     {
         if (_messageTable == null || _mainWindow == null) return;
-        // In read mode, the strip (ListControl) should keep focus, not the table
-        if (_layoutModeManager.IsReadMode) return;
         var focused = _mainWindow.FocusManager?.FocusedControl;
-        // If nothing is focused, or a non-interactive control got focus, restore to table
-        if (focused == null || focused == _readingPane || focused is MarkupControl || focused is ScrollablePanelControl)
-            _mainWindow.FocusManager?.SetFocus(_messageTable, FocusReason.Programmatic);
+        if (_layoutModeManager.IsReadMode)
+        {
+            // In read mode, only restore focus to the strip if it already had it or focus was lost
+            if (focused == null && _readModeList != null)
+                _mainWindow.FocusManager?.SetFocus(_readModeList, FocusReason.Programmatic);
+        }
+        else
+        {
+            // Only restore focus to message table if it had focus or focus was lost entirely
+            if (focused == null || focused == _messageTable)
+                _mainWindow.FocusManager?.SetFocus(_messageTable, FocusReason.Programmatic);
+        }
     }
 }

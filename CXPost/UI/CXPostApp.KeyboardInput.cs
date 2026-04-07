@@ -62,6 +62,43 @@ public partial class CXPostApp
             return;
         }
 
+        // j/k: navigate messages regardless of focused control (preserve current focus)
+        if (!ctrl && !shift && (e.KeyInfo.Key == ConsoleKey.J || e.KeyInfo.Key == ConsoleKey.K))
+        {
+            var direction = e.KeyInfo.Key == ConsoleKey.J ? 1 : -1;
+            var currentFocus = _mainWindow?.FocusManager?.FocusedControl;
+            if (_layoutModeManager.IsReadMode && _readModeList != null)
+            {
+                var newIdx = _readModeList.SelectedIndex + direction;
+                if (newIdx >= 0 && newIdx < _readModeList.Items.Count)
+                    _readModeList.SelectedIndex = newIdx;
+            }
+            else if (_messageTable != null && _messageTable.RowCount > 0)
+            {
+                var newIdx = _messageTable.SelectedRowIndex + direction;
+                if (newIdx >= 0 && newIdx < _messageTable.RowCount)
+                    _messageTable.SelectedRowIndex = newIdx;
+            }
+            // Restore focus — SelectedRowIndex triggers OnMessageSelected which steals focus
+            if (currentFocus != null)
+                _mainWindow?.FocusManager?.SetFocus(currentFocus, FocusReason.Programmatic);
+            e.Handled = true;
+            return;
+        }
+
+        // Space: toggle check on selected message regardless of focus
+        // Skip if the table already handled it (e.g. table was focused and processed Spacebar itself)
+        if (!ctrl && !shift && !e.AlreadyHandled && e.KeyInfo.Key == ConsoleKey.Spacebar && _messageTable is { Visible: true, RowCount: > 0 })
+        {
+            var idx = _messageTable.SelectedRowIndex;
+            if (idx >= 0 && idx < _messageTable.RowCount)
+            {
+                _messageTable.ToggleRowSelection(idx);
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (e.KeyInfo.Key == ConsoleKey.Escape && GetCheckedCount() > 0)
         {
             ClearSelection();
