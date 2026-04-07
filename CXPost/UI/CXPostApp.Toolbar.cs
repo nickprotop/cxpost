@@ -62,6 +62,10 @@ public partial class CXPostApp
             }
 
             _toolbar.AddItem(new SeparatorControl());
+            var treeLabel = _layoutModeManager.IsFolderTreeHidden
+                ? "\u25b6 Folders"
+                : "\u25c0 Folders";
+            AddToolbarButton(treeLabel, () => ToggleFolderTree());
             var layoutLabel = _currentLayout == "classic" ? "\u25eb Wide" : "\u2b12 Classic";
             AddToolbarButton(layoutLabel, () => SimulateKey(ConsoleKey.F8));
             AddToolbarButton("\u2699 Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));

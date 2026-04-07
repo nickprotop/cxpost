@@ -1,47 +1,96 @@
-using SharpConsoleUI;
 using SharpConsoleUI.Animation;
-using SharpConsoleUI.Controls;
-using SharpConsoleUI.Layout;
 
 namespace CXPost.UI;
 
 public partial class CXPostApp
 {
-    private void TransitionToMode(Action modeChange)
+    private void ToggleFolderTree()
     {
         if (_mainGrid == null) return;
 
         var columns = _mainGrid.Columns;
-        var prevMode = _layoutModeManager.CurrentMode;
+        if (columns.Count == 0) return;
 
-        // Save current widths if leaving Compact
-        if (prevMode == LayoutMode.Compact && columns.Count >= 2)
+        var duration = TimeSpan.FromMilliseconds(250);
+
+        if (!_layoutModeManager.IsFolderTreeHidden)
         {
-            _layoutModeManager.SaveCompactWidths(
-                folderWidth: columns[0].Width ?? 28,
-                messageWidth: columns.Count > 1 ? columns[1].Width ?? 0 : 0,
-                previewWidth: columns.Count > 2 ? columns[2].Width ?? 0 : 0);
+            _layoutModeManager.SaveFolderWidth(columns[0].Width ?? 28);
+            _layoutModeManager.ToggleFolderTree();
+            _mainGrid.AnimateColumnWidth(0, 0, duration);
+        }
+        else
+        {
+            _layoutModeManager.ToggleFolderTree();
+            _mainGrid.AnimateColumnWidth(0, _layoutModeManager.GetSavedFolderWidth(), duration);
         }
 
-        modeChange();
-
-        var newMode = _layoutModeManager.CurrentMode;
-        var duration = TimeSpan.FromMilliseconds(250);
-        var targets = _layoutModeManager.GetTargetWidths();
-
-        // Animate column widths
-        if (columns.Count > 0 && targets.folder.HasValue)
-            _mainGrid.AnimateColumnWidth(0, targets.folder.Value, duration);
-        if (columns.Count > 1 && targets.message.HasValue)
-            _mainGrid.AnimateColumnWidth(1, targets.message.Value, duration);
-        if (columns.Count > 2 && targets.preview.HasValue)
-            _mainGrid.AnimateColumnWidth(2, targets.preview.Value, duration);
-
-        // Update focus dimming pane registrations
         UpdateFocusDimmingPanes();
-
-        // Update toolbar and help bar
         UpdateToolbar();
         UpdateHelpBar();
+    }
+
+    private void EnterReadMode()
+    {
+        if (_mainGrid == null || _layoutModeManager.IsReadMode) return;
+
+        var columns = _mainGrid.Columns;
+        if (columns.Count < 2) return;
+
+        _layoutModeManager.SaveMessageColumnWidth(columns[1].Width ?? 0);
+        _layoutModeManager.EnterReadMode();
+
+        var duration = TimeSpan.FromMilliseconds(250);
+        _mainGrid.AnimateColumnWidth(1, LayoutModeManager.StripWidth, duration);
+
+        UpdateFocusDimmingPanes();
+        UpdateToolbar();
+        UpdateHelpBar();
+    }
+
+    private void ExitReadMode()
+    {
+        if (_mainGrid == null || !_layoutModeManager.IsReadMode) return;
+
+        _layoutModeManager.ExitReadMode();
+
+        var columns = _mainGrid.Columns;
+        if (columns.Count < 2) return;
+
+        var savedWidth = _layoutModeManager.GetSavedMessageColumnWidth();
+        var duration = TimeSpan.FromMilliseconds(250);
+
+        if (savedWidth > 0)
+        {
+            _mainGrid.AnimateColumnWidth(1, savedWidth, duration);
+        }
+        else
+        {
+            // Restore fill behavior
+            columns[1].Width = null;
+        }
+
+        UpdateFocusDimmingPanes();
+        UpdateToolbar();
+        UpdateHelpBar();
+    }
+
+    private void ToggleReadStrip()
+    {
+        if (_mainGrid == null || !_layoutModeManager.IsReadMode) return;
+
+        _layoutModeManager.ToggleStrip();
+
+        var columns = _mainGrid.Columns;
+        if (columns.Count < 2) return;
+
+        var duration = TimeSpan.FromMilliseconds(200);
+
+        if (_layoutModeManager.IsStripVisible)
+            _mainGrid.AnimateColumnWidth(1, LayoutModeManager.StripWidth, duration);
+        else
+            _mainGrid.AnimateColumnWidth(1, 0, duration);
+
+        UpdateFocusDimmingPanes();
     }
 }

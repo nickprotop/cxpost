@@ -24,10 +24,33 @@ public partial class CXPostApp
         var shift = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Shift);
 
         // F2: toggle folder tree visibility
-        if (e.KeyInfo.Key == KeyBindings.FocusMode)
+        if (e.KeyInfo.Key == KeyBindings.ToggleTree)
         {
-            // Simplified: just toggle folder tree (full rewrite in next task)
-            TransitionToMode(() => _layoutModeManager.ToggleFocus());
+            ToggleFolderTree();
+            e.Handled = true;
+            return;
+        }
+        // F4: toggle read mode
+        if (e.KeyInfo.Key == KeyBindings.ReadMode)
+        {
+            if (_layoutModeManager.IsReadMode)
+                ExitReadMode();
+            else
+                EnterReadMode();
+            e.Handled = true;
+            return;
+        }
+        // Escape exits read mode
+        if (e.KeyInfo.Key == ConsoleKey.Escape && _layoutModeManager.IsReadMode)
+        {
+            ExitReadMode();
+            e.Handled = true;
+            return;
+        }
+        // Ctrl+B: toggle message strip in read mode
+        if (ctrl && e.KeyInfo.Key == ConsoleKey.B && _layoutModeManager.IsReadMode)
+        {
+            ToggleReadStrip();
             e.Handled = true;
             return;
         }

@@ -21,8 +21,9 @@ public static class KeyBindings
     public static readonly ConsoleKey ToggleFlag = ConsoleKey.D;           // Ctrl+D
     public static readonly ConsoleKey ToggleRead = ConsoleKey.U;           // Ctrl+U
 
-    // Layout modes
-    public static readonly ConsoleKey FocusMode = ConsoleKey.F2;           // F2
+    // Layout views
+    public static readonly ConsoleKey ToggleTree = ConsoleKey.F2;          // F2
+    public static readonly ConsoleKey ReadMode = ConsoleKey.F4;            // F4
 
     // Reserved: SaveDraft (Ctrl+S conflicts with Search — not yet implemented)
 }
