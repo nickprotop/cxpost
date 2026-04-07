@@ -46,6 +46,10 @@ public partial class CXPostApp
         UpdateFocusDimmingPanes();
         UpdateToolbar();
         UpdateHelpBar();
+
+        var msg = GetSelectedMessage();
+        if (msg != null) UpdatePreviewHeader(msg);
+        else UpdatePreviewHeader();
     }
 
     private void ExitReadMode()
@@ -73,6 +77,10 @@ public partial class CXPostApp
         UpdateFocusDimmingPanes();
         UpdateToolbar();
         UpdateHelpBar();
+
+        var msg = GetSelectedMessage();
+        if (msg != null) UpdatePreviewHeader(msg);
+        else UpdatePreviewHeader();
     }
 
     private void ToggleReadStrip()
@@ -92,5 +100,9 @@ public partial class CXPostApp
             _mainGrid.AnimateColumnWidth(1, 0, duration);
 
         UpdateFocusDimmingPanes();
+
+        var msg = GetSelectedMessage();
+        if (msg != null) UpdatePreviewHeader(msg);
+        else UpdatePreviewHeader();
     }
 }

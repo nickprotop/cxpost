@@ -328,12 +328,19 @@ public partial class CXPostApp
             var total = _messageTable.RowCount;
             var status = msg.IsRead ? "[grey50]Read[/]" : "[yellow]Unread[/]";
             var date = msg.Date.ToString("MMM d, yyyy 'at' h:mm tt");
-            _previewPanelHeader.SetContent(
-                [$"[grey70]{selectedIdx} of {total}[/]  {status}  [grey50]{date}[/]"]);
+            var headerText = $"[grey70]{selectedIdx} of {total}[/]  {status}  [grey50]{date}[/]";
+
+            if (_layoutModeManager.IsReadMode && !_layoutModeManager.IsStripVisible)
+                headerText += $"  [{ColorScheme.PrimaryMarkup}]\u25c0 Show List (Ctrl+B)[/]";
+
+            _previewPanelHeader.SetContent([headerText]);
         }
         else
         {
-            _previewPanelHeader.SetContent(["[grey70]Preview[/]"]);
+            var headerText = "[grey70]Preview[/]";
+            if (_layoutModeManager.IsReadMode && !_layoutModeManager.IsStripVisible)
+                headerText += $"  [{ColorScheme.PrimaryMarkup}]\u25c0 Show List (Ctrl+B)[/]";
+            _previewPanelHeader.SetContent([headerText]);
         }
     }
 }

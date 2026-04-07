@@ -113,6 +113,20 @@ public partial class CXPostApp
             _helpBar.Add("F5", "Sync All", () => SimulateKey(ConsoleKey.F5));
             if (!_isSearchActive && _dashboardPanel?.Visible != true)
                 _helpBar.Add("Shift+F5", "Sync Folder", () => SimulateKey(ConsoleKey.F5, shift: true));
+
+            _helpBar.Add("F2", _layoutModeManager.IsFolderTreeHidden ? "Show Folders" : "Hide Folders",
+                () => ToggleFolderTree());
+
+            if (_layoutModeManager.IsReadMode)
+            {
+                _helpBar.Add("F4", "Exit Read", () => ExitReadMode());
+                _helpBar.Add("Ctrl+B", "Toggle List", () => ToggleReadStrip());
+            }
+            else if (GetSelectedMessage() != null)
+            {
+                _helpBar.Add("F4", "Read View", () => EnterReadMode());
+            }
+
             _helpBar.Add("Ctrl+,", "Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
         }
 
@@ -154,6 +168,23 @@ public partial class CXPostApp
                 ? $"[yellow]\u2605 Starred[/]"
                 : $"[{ColorScheme.PrimaryMarkup}]\u2606 Starred[/]";
             _rightPanelHeader.AddLeftText(starLabel, ToggleFlaggedFilter);
+        }
+
+        // Read mode toggle on the right side
+        if (GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
+        {
+            if (_layoutModeManager.IsReadMode)
+            {
+                _rightPanelHeader.AddRightText(
+                    $"[{ColorScheme.PrimaryMarkup}]\u25a3 List[/] [grey50](F4)[/]",
+                    () => ExitReadMode());
+            }
+            else
+            {
+                _rightPanelHeader.AddRightText(
+                    $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [grey50](F4)[/]",
+                    () => EnterReadMode());
+            }
         }
     }
 
