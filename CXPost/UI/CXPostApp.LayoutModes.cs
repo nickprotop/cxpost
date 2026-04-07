@@ -37,17 +37,6 @@ public partial class CXPostApp
         if (columns.Count > 2 && targets.preview.HasValue)
             _mainGrid.AnimateColumnWidth(2, targets.preview.Value, duration);
 
-        // Show/hide snippet column in Triage mode
-        if (_messageTable != null)
-        {
-            var snippetWidth = newMode == LayoutMode.Triage ? 40 : 0;
-            _messageTable.SetColumnWidth(5, snippetWidth > 0 ? snippetWidth : 0);
-        }
-
-        // Auto-enable checkbox mode in Triage
-        if (_messageTable != null)
-            _messageTable.CheckboxMode = newMode == LayoutMode.Triage;
-
         // Update focus dimming pane registrations
         UpdateFocusDimmingPanes();
 

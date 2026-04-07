@@ -23,30 +23,11 @@ public partial class CXPostApp
         var ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
         var shift = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Shift);
 
-        // Layout mode switches
+        // F2: toggle folder tree visibility
         if (e.KeyInfo.Key == KeyBindings.FocusMode)
         {
+            // Simplified: just toggle folder tree (full rewrite in next task)
             TransitionToMode(() => _layoutModeManager.ToggleFocus());
-            e.Handled = true;
-            return;
-        }
-        if (e.KeyInfo.Key == KeyBindings.TriageMode)
-        {
-            TransitionToMode(() => _layoutModeManager.ToggleTriage());
-            e.Handled = true;
-            return;
-        }
-        // Escape returns from Focus/Triage to previous mode
-        if (e.KeyInfo.Key == ConsoleKey.Escape && _layoutModeManager.CurrentMode != LayoutMode.Compact)
-        {
-            TransitionToMode(() => _layoutModeManager.GoBack());
-            e.Handled = true;
-            return;
-        }
-        // In Triage mode, Enter on a message enters Focus
-        if (e.KeyInfo.Key == ConsoleKey.Enter && _layoutModeManager.CurrentMode == LayoutMode.Triage)
-        {
-            TransitionToMode(() => _layoutModeManager.EnterFocusFromTriage());
             e.Handled = true;
             return;
         }

@@ -23,7 +23,6 @@ public static class KeyBindings
 
     // Layout modes
     public static readonly ConsoleKey FocusMode = ConsoleKey.F2;           // F2
-    public static readonly ConsoleKey TriageMode = ConsoleKey.F3;          // F3
 
     // Reserved: SaveDraft (Ctrl+S conflicts with Search — not yet implemented)
 }
