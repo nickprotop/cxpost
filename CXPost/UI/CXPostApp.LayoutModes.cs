@@ -218,7 +218,6 @@ public partial class CXPostApp
             if (row.Tag is not MailMessage msg) continue;
 
             var senderName = msg.FromName ?? msg.FromAddress ?? "Unknown";
-            if (senderName.Length > 25) senderName = senderName[..22] + "...";
 
             var textColor = msg.IsRead ? ColorScheme.ReadMarkup : ColorScheme.UnreadMarkup;
             var text = $"[{textColor}]{MarkupParser.Escape(senderName)}[/]";

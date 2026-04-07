@@ -159,6 +159,7 @@ public partial class CXPostApp : IDisposable
         _messageTable.CheckboxMode = true;
         _messageTable.FilteringEnabled = true;
         _messageTable.HoverEnabled = false;
+        _messageTable.TruncationFade = true;
         _messageTable.MultiSelectionChanged += (_, count) =>
         {
             var rowIdx = _messageTable.SelectedRowIndex;
@@ -213,6 +214,7 @@ public partial class CXPostApp : IDisposable
             .WithFocusedBackgroundColor(Color.Transparent)
             .WithMargin(1, 0, 0, 0)
             .Build();
+        _readModeList.TruncationFade = true;
         _readModeList.HorizontalAlignment = HorizontalAlignment.Stretch;
         _readModeList.VerticalAlignment = VerticalAlignment.Fill;
 
