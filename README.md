@@ -62,7 +62,7 @@ On first run, CXPost will prompt you to configure your email account (IMAP/SMTP)
 | 🔍 **Search** | Instant local search + server-side IMAP SEARCH with recent query suggestions |
 | 💬 **Threading** | JWZ conversation threading via Message-ID/References/In-Reply-To headers |
 | 📊 **Dashboard** | Interactive account dashboard with stats, sparklines, clickable folders and actions |
-| 🖥️ **Layouts** | Classic (vertical split) or Wide (3-column) — toggle with F8 |
+| 🖥️ **Layouts** | Classic, Wide, and Read mode with composable view toggles (F2/F3/F4/F8) |
 | ✉️ **Compose** | Reply, reply-all, forward with configurable prefixes. Signature with position control |
 | 🗑️ **Safe Delete** | Move to Trash with 5-second undo. Confirmation dialog for permanent deletes |
 | 🔐 **Credentials** | OS-native keyring (secret-tool/Keychain) with encrypted file fallback |
@@ -70,7 +70,7 @@ On first run, CXPost will prompt you to configure your email account (IMAP/SMTP)
 | ⚡ **IMAP IDLE** | Push notifications with debounced sync for real-time new mail |
 | 📁 **Folder Detection** | IMAP special-use attributes (RFC 6154) + name heuristics, manual override in settings |
 | 🔄 **Offline Cache** | SQLite-backed message/contact storage with lazy body fetching |
-| 🎨 **Polished UI** | Gradient backgrounds, clickable breadcrumb, toolbar, status bars, rounded dialogs |
+| 🎨 **Polished UI** | Depth-based focus dimming, animated transitions, gradient sync progress, row micro-animations |
 | ⚙️ **Per-Account Settings** | Signature, reply-to, auto-bcc, default-cc, sync interval, mark-as-read, folder paths |
 | 🖱️ **Mouse Support** | Click to navigate, click buttons, click attachment save, click breadcrumb |
 
@@ -88,11 +88,14 @@ On first run, CXPost will prompt you to configure your email account (IMAP/SMTP)
 | `Ctrl+D` | Toggle flag |
 | `Ctrl+M` | Move to folder |
 | `Del` | Delete (move to Trash / confirm permanent) |
-| `F2` | Attach file (in compose) |
+| `F2` | Toggle folder tree |
+| `F3` | Toggle preview panel |
+| `F4` | Toggle read mode (full-width reader with message strip) |
+| `Ctrl+B` | Toggle message strip in read mode |
 | `F5` | Sync all accounts |
 | `F8` | Toggle layout (Classic ↔ Wide) |
 | `Ctrl+,` | Settings |
-| `Esc` | Clear search / exit edit mode / close dialog |
+| `Esc` | Exit read mode / clear search / close dialog |
 | `1-9` | Save attachment #N |
 | `Ctrl+1-9` | Save As attachment #N |
 | `A` | Save all attachments |
