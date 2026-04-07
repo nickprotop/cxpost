@@ -206,6 +206,9 @@ public partial class CXPostApp : IDisposable
         _readModeList = Controls.List()
             .WithHighlightColors(Color.White, Color.Grey37)
             .WithForegroundColor(ColorScheme.SecondaryText)
+            .WithBackgroundColor(Color.Transparent)
+            .WithFocusedBackgroundColor(Color.Transparent)
+            .WithMargin(1, 0, 0, 0)
             .Build();
         _readModeList.HorizontalAlignment = HorizontalAlignment.Stretch;
         _readModeList.VerticalAlignment = VerticalAlignment.Fill;
@@ -443,11 +446,13 @@ public partial class CXPostApp : IDisposable
             else
                 _mainGrid.AddColumn(stripColumn);
 
-            // Reading pane (fills)
+            // Reading pane (fills) — no splitter, strip width is fixed
             _previewColumn = new ColumnContainer(_mainGrid);
             _previewColumn.AddContent(_previewPanelHeader!);
             _previewColumn.AddContent(_readingPane!);
-            _previewSplitter = _mainGrid.AddColumnWithSplitter(_previewColumn);
+            _mainGrid.AddColumnWithSplitter(_previewColumn);
+            // Note: still using AddColumnWithSplitter for the thin visual separator line,
+            // but the splitter between strip and reader is non-draggable at strip's fixed width
 
             // Hide horizontal splitter (not used in read mode)
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;

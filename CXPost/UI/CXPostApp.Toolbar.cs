@@ -131,18 +131,22 @@ public partial class CXPostApp
                     () => TogglePreview());
             }
 
-            _bottomBar.AddRightSeparator();
-            var readColor = _layoutModeManager.IsReadMode ? ColorScheme.PrimaryMarkup : ColorScheme.MutedMarkup;
-            _bottomBar.AddRightText($"[{readColor}]Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
-                () => { if (_layoutModeManager.IsReadMode) ExitReadMode(); else EnterReadMode(); });
-
-            // Layout toggle (hidden in read mode — read mode has its own grid)
-            if (!_layoutModeManager.IsReadMode)
+            // Read and Layout toggles (not available on dashboard)
+            if (!isDashboard)
             {
                 _bottomBar.AddRightSeparator();
-                var layoutName = _currentLayout == "classic" ? "Wide" : "Classic";
-                _bottomBar.AddRightText($"[{ColorScheme.MutedMarkup}]{layoutName}[/] [{ColorScheme.MutedMarkup}]F8[/]",
-                    () => SimulateKey(ConsoleKey.F8));
+                var readColor = _layoutModeManager.IsReadMode ? ColorScheme.PrimaryMarkup : ColorScheme.MutedMarkup;
+                _bottomBar.AddRightText($"[{readColor}]Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
+                    () => { if (_layoutModeManager.IsReadMode) ExitReadMode(); else EnterReadMode(); });
+
+                // Layout toggle (hidden in read mode — read mode has its own grid)
+                if (!_layoutModeManager.IsReadMode)
+                {
+                    _bottomBar.AddRightSeparator();
+                    var layoutName = _currentLayout == "classic" ? "Wide" : "Classic";
+                    _bottomBar.AddRightText($"[{ColorScheme.MutedMarkup}]{layoutName}[/] [{ColorScheme.MutedMarkup}]F8[/]",
+                        () => SimulateKey(ConsoleKey.F8));
+                }
             }
         });
     }

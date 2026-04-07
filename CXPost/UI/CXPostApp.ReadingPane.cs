@@ -338,30 +338,32 @@ public partial class CXPostApp
             _previewPanelHeader.AddLeftText("[grey70]Preview[/]");
         }
 
-        // Read mode button on the right
+        // Right side buttons
         if (GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
         {
+            // Strip toggle in read mode (Ctrl+B)
+            if (_layoutModeManager.IsReadMode)
+            {
+                var stripLabel = _layoutModeManager.IsStripVisible
+                    ? $"[{ColorScheme.MutedMarkup}]\u25c0 Hide List[/]"
+                    : $"[{ColorScheme.PrimaryMarkup}]\u25b6 Show List[/]";
+                _previewPanelHeader.AddRightText(stripLabel, () => ToggleReadStrip());
+                _previewPanelHeader.AddRightSeparator();
+            }
+
+            // Read/List mode toggle (F4)
             if (_layoutModeManager.IsReadMode)
             {
                 _previewPanelHeader.AddRightText(
-                    $"[{ColorScheme.PrimaryMarkup}]\u25a3 List[/] [grey50](F4)[/]",
+                    $"[{ColorScheme.PrimaryMarkup}]\u25a3 List[/] [{ColorScheme.MutedMarkup}]F4[/]",
                     () => ExitReadMode());
             }
             else
             {
                 _previewPanelHeader.AddRightText(
-                    $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [grey50](F4)[/]",
+                    $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
                     () => EnterReadMode());
             }
-        }
-
-        // Strip toggle hint when in read mode with strip hidden
-        if (_layoutModeManager.IsReadMode && !_layoutModeManager.IsStripVisible)
-        {
-            _previewPanelHeader.AddLeftSeparator();
-            _previewPanelHeader.AddLeftText(
-                $"[{ColorScheme.PrimaryMarkup}]\u25c0 Show List[/] [grey50](Ctrl+B)[/]",
-                () => ToggleReadStrip());
         }
     }
 }
