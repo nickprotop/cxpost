@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
 
@@ -24,16 +25,16 @@ public class MessageBar
 {
     private readonly List<MessageEntry> _messages = [];
     private readonly MarkupControl _control;
-    private readonly BaseControl _rule;
+    private readonly RuleControl _ruleControl;
     private int _nextId;
 
     public MessageBar()
     {
-        _rule = Controls.RuleBuilder()
+        _ruleControl = (RuleControl)Controls.RuleBuilder()
             .StickyBottom()
             .WithColor(Color.Grey23)
             .Build();
-        _rule.Visible = false;
+        _ruleControl.Visible = false;
 
         _control = Controls.Markup("")
             .WithAlignment(HorizontalAlignment.Stretch)
@@ -69,7 +70,8 @@ public class MessageBar
     }
 
     public MarkupControl Control => _control;
-    public BaseControl Rule => _rule;
+    public BaseControl Rule => _ruleControl;
+    public RuleControl ProgressRule => _ruleControl;
     public bool HasMessages => _messages.Count > 0;
 
     public string Show(string text, MessageSeverity severity = MessageSeverity.Info,
@@ -210,12 +212,12 @@ public class MessageBar
         if (_messages.Count == 0)
         {
             _control.Visible = false;
-            _rule.Visible = false;
+            _ruleControl.Visible = false;
             return;
         }
 
         _control.Visible = true;
-        _rule.Visible = true;
+        _ruleControl.Visible = true;
 
         var lines = new List<string>();
         foreach (var msg in _messages)
@@ -243,5 +245,44 @@ public class MessageBar
         }
 
         _control.SetContent(lines);
+    }
+
+    // Sync progress fields
+    private static readonly ColorGradient SyncGradient = ColorGradient.FromColors(
+        ColorScheme.BorderColor, ColorScheme.ActiveBorderColor, Color.Cyan1);
+    private int _activeSyncCount;
+    private int _totalFetched;
+    private int _totalExpected;
+
+    public void StartSyncProgress()
+    {
+        _activeSyncCount++;
+        if (_activeSyncCount == 1)
+            _ruleControl.SetIndeterminate(SyncGradient);
+    }
+
+    public void SetSyncProgress(int totalFetched, int totalExpected)
+    {
+        _totalFetched = totalFetched;
+        _totalExpected = totalExpected;
+        if (_totalExpected > 0)
+            _ruleControl.SetProgress((float)_totalFetched / _totalExpected, SyncGradient);
+    }
+
+    public void EndSyncProgress()
+    {
+        _activeSyncCount = Math.Max(0, _activeSyncCount - 1);
+        if (_activeSyncCount == 0)
+        {
+            _ruleControl.SetProgress(1.0f, SyncGradient);
+            // Hold at 100% briefly, then fade
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(500);
+                _ruleControl.ClearProgress(TimeSpan.FromMilliseconds(300));
+                _totalFetched = 0;
+                _totalExpected = 0;
+            });
+        }
     }
 }

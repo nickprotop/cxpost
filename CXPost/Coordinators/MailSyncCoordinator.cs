@@ -58,8 +58,11 @@ public class MailSyncCoordinator
         try
         {
             _app.Value.EnqueueUiAction(() =>
+            {
                 _app.Value.ReplaceMessage(syncMsgId,
-                    $"Connecting to {account.ImapHost}:{account.ImapPort}..."));
+                    $"Connecting to {account.ImapHost}:{account.ImapPort}...");
+                _app.Value.StartSyncProgress();
+            });
 
             var totalMessages = 0;
             await imapLock.WaitAsync(ct);
@@ -105,6 +108,7 @@ public class MailSyncCoordinator
                     {
                         _app.Value.ReplaceMessage(syncMsgId,
                             $"{account.Name}: Syncing {folder.DisplayName} ({progress}/{total})...");
+                        _app.Value.SetSyncProgress(progress, total);
                         _app.Value.RefreshFolderTree();
                     });
 
@@ -152,6 +156,7 @@ public class MailSyncCoordinator
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
+                _app.Value.EndSyncProgress();
                 var globalNotify = _configService.Load().Notifications;
                 if (globalNotify && account.NotificationsEnabled)
                     _notifications.NotifySyncComplete(account.Name, totalMessages);
@@ -160,7 +165,11 @@ public class MailSyncCoordinator
         catch (OperationCanceledException)
         {
             ImapLogger.Debug($"[{account.Name}] SyncAccount cancelled");
-            _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(syncMsgId));
+            _app.Value.EnqueueUiAction(() =>
+            {
+                _app.Value.DismissMessage(syncMsgId);
+                _app.Value.EndSyncProgress();
+            });
         }
         catch (Exception ex)
         {
@@ -168,6 +177,7 @@ public class MailSyncCoordinator
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
+                _app.Value.EndSyncProgress();
                 _app.Value.ShowWarning($"{account.Name}: Sync retry — {ex.Message}");
             });
         }
@@ -231,6 +241,7 @@ public class MailSyncCoordinator
             {
                 _app.Value.ReplaceMessage(syncMsgId,
                     $"Syncing {folder.DisplayName}...");
+                _app.Value.StartSyncProgress();
                 _app.Value.RefreshFolderTree();
             });
 
@@ -262,6 +273,7 @@ public class MailSyncCoordinator
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
+                _app.Value.EndSyncProgress();
                 _app.Value.RefreshFolderTree();
                 var prevCount = _app.Value.MessageTableRowCount;
                 _app.Value.RefreshCurrentMessageListIfFolder(folder.Id);
@@ -274,7 +286,11 @@ public class MailSyncCoordinator
         }
         catch (OperationCanceledException)
         {
-            _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(syncMsgId));
+            _app.Value.EnqueueUiAction(() =>
+            {
+                _app.Value.DismissMessage(syncMsgId);
+                _app.Value.EndSyncProgress();
+            });
         }
         catch (Exception ex)
         {
@@ -282,6 +298,7 @@ public class MailSyncCoordinator
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
+                _app.Value.EndSyncProgress();
                 _app.Value.ShowWarning($"Sync failed for {folder.DisplayName}: {ex.Message}");
             });
         }

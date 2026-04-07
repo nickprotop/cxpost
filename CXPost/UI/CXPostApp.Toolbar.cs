@@ -190,4 +190,8 @@ public partial class CXPostApp
 
     public void ShowUndoNotification(string id, string text, Action onUndo) =>
         _messageBar?.ShowWithUndo(id, text, onUndo);
+
+    public void StartSyncProgress() => _messageBar?.StartSyncProgress();
+    public void SetSyncProgress(int fetched, int expected) => _messageBar?.SetSyncProgress(fetched, expected);
+    public void EndSyncProgress() => _messageBar?.EndSyncProgress();
 }
