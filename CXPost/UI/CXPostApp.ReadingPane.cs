@@ -42,6 +42,7 @@ public partial class CXPostApp
         headerLines.Add("");
         var headerControl = Controls.Markup().Build();
         headerControl.HorizontalAlignment = HorizontalAlignment.Stretch;
+        headerControl.Tag = "header";
         headerControl.SetContent(headerLines);
         _readingPane.AddControl(headerControl);
 
@@ -58,25 +59,30 @@ public partial class CXPostApp
         // Body
         if (msg.BodyFetched && msg.BodyPlain != null)
         {
-            var bodyLines = new List<string>
+            // Separator between header/attachments and body
+            var sepLines = new List<string>
             {
                 $"  [grey23]{"".PadRight(60, '\u2500')}[/]",
                 ""
             };
+            var sepControl = Controls.Markup().Build();
+            sepControl.HorizontalAlignment = HorizontalAlignment.Stretch;
+            sepControl.SetContent(sepLines);
+            _readingPane.AddControl(sepControl);
+
             var body = msg.BodyPlain;
+
             if (MessageFormatter.IsHtml(body))
             {
                 var markup = Components.HtmlConverter.ToMarkup(body);
-                bodyLines.AddRange(markup.Split('\n').Select(l => $"  {l}"));
+                var bodyLines = markup.Split('\n').Select(l => $"  {l}").ToList();
+                AddHtmlSegmentedControls(bodyLines);
             }
             else
             {
-                bodyLines.AddRange(body.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}"));
+                var bodyLines = body.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}").ToList();
+                AddPlainTextSegmentedControls(bodyLines);
             }
-            var bodyControl = Controls.Markup().Build();
-            bodyControl.HorizontalAlignment = HorizontalAlignment.Stretch;
-            bodyControl.SetContent(bodyLines);
-            _readingPane.AddControl(bodyControl);
         }
         else
         {
@@ -95,6 +101,118 @@ public partial class CXPostApp
         var placeholder = Controls.Markup($"  [{ColorScheme.MutedMarkup}]Select a message to read[/]").Build();
         placeholder.HorizontalAlignment = HorizontalAlignment.Stretch;
         _readingPane.AddControl(placeholder);
+    }
+
+    private void AddPlainTextSegmentedControls(List<string> lines)
+    {
+        if (_readingPane == null) return;
+
+        var segments = Components.EmailBodyParser.Parse(lines);
+        foreach (var segment in segments)
+        {
+            var control = Controls.Markup().Build();
+            control.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+            switch (segment.Type)
+            {
+                case Components.EmailSegmentType.Quote:
+                    control.Tag = "quote";
+                    var quoteLines = segment.Lines.Select(l =>
+                    {
+                        var trimmed = l.TrimStart();
+                        // Strip "> " prefix if present, then re-format
+                        var content = trimmed.StartsWith("> ") ? trimmed[2..] : trimmed;
+                        return $"  [{ColorScheme.QuoteBorderMarkup}]\u258e[/] [{ColorScheme.QuoteTextMarkup}]{content}[/]";
+                    }).ToList();
+                    control.SetContent(quoteLines);
+                    break;
+
+                case Components.EmailSegmentType.Signature:
+                    control.Tag = "signature";
+                    var sigLines = segment.Lines.Select(l =>
+                        $"  [{ColorScheme.SignatureMarkup}]{l.TrimStart()}[/]").ToList();
+                    control.SetContent(sigLines);
+                    break;
+
+                default:
+                    control.SetContent(segment.Lines);
+                    break;
+            }
+
+            _readingPane.AddControl(control);
+        }
+    }
+
+    private void AddHtmlSegmentedControls(List<string> lines)
+    {
+        if (_readingPane == null) return;
+
+        // Split on blockquote markers, then parse remaining for signatures
+        var segments = new List<Components.EmailSegment>();
+        var currentLines = new List<string>();
+        bool inQuote = false;
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed == Components.HtmlConverter.BlockquoteStartMarker)
+            {
+                if (currentLines.Count > 0)
+                {
+                    segments.AddRange(Components.EmailBodyParser.Parse(currentLines));
+                    currentLines.Clear();
+                }
+                inQuote = true;
+                continue;
+            }
+            if (trimmed == Components.HtmlConverter.BlockquoteEndMarker)
+            {
+                if (currentLines.Count > 0)
+                    segments.Add(new Components.EmailSegment(Components.EmailSegmentType.Quote, new List<string>(currentLines)));
+                currentLines.Clear();
+                inQuote = false;
+                continue;
+            }
+
+            currentLines.Add(line);
+        }
+
+        if (currentLines.Count > 0)
+        {
+            if (inQuote)
+                segments.Add(new Components.EmailSegment(Components.EmailSegmentType.Quote, currentLines));
+            else
+                segments.AddRange(Components.EmailBodyParser.Parse(currentLines));
+        }
+
+        foreach (var segment in segments)
+        {
+            var control = Controls.Markup().Build();
+            control.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+            switch (segment.Type)
+            {
+                case Components.EmailSegmentType.Quote:
+                    control.Tag = "quote";
+                    var quoteLines = segment.Lines.Select(l =>
+                        $"  [{ColorScheme.QuoteBorderMarkup}]\u258e[/] [{ColorScheme.QuoteTextMarkup}]{l.TrimStart()}[/]").ToList();
+                    control.SetContent(quoteLines);
+                    break;
+
+                case Components.EmailSegmentType.Signature:
+                    control.Tag = "signature";
+                    var sigLines = segment.Lines.Select(l =>
+                        $"  [{ColorScheme.SignatureMarkup}]{l.TrimStart()}[/]").ToList();
+                    control.SetContent(sigLines);
+                    break;
+
+                default:
+                    control.SetContent(segment.Lines);
+                    break;
+            }
+
+            _readingPane.AddControl(control);
+        }
     }
 
     private void TriggerReadingPaneFadeIn()

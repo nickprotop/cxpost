@@ -43,4 +43,9 @@ public static class ColorScheme
     public const string FlaggedMarkup = "yellow";
     public const string ErrorMarkup = "red";
     public const string SuccessMarkup = "green";
+
+    // Reading pane segment colors
+    public const string QuoteBorderMarkup = "rgb(74,122,138)";
+    public const string QuoteTextMarkup = "grey50";
+    public const string SignatureMarkup = "grey35";
 }
