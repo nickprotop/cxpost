@@ -15,6 +15,9 @@ public enum HtmlOutputMode { Markup, PlainText }
 /// </summary>
 public static class HtmlConverter
 {
+    public const string BlockquoteStartMarker = "\x00QUOTE_START\x00";
+    public const string BlockquoteEndMarker = "\x00QUOTE_END\x00";
+
     public static string ToMarkup(string html) => Convert(html, HtmlOutputMode.Markup);
     public static string ToPlainText(string html) => Convert(html, HtmlOutputMode.PlainText);
 
@@ -327,13 +330,23 @@ public static class HtmlConverter
                 ProcessNode(element, quoteContent, state, depth);
                 state.IndentLevel--;
 
-                foreach (var line in quoteContent.ToString().Split('\n'))
+                if (state.Mode == HtmlOutputMode.Markup)
                 {
-                    var prefix = new string(' ', state.IndentLevel * 2);
-                    if (state.Mode == HtmlOutputMode.Markup)
-                        sb.AppendLine($"{prefix}[grey50]\u258e[/] [italic grey70]{MarkupParser.Escape(line.Trim())}[/]");
-                    else
+                    sb.AppendLine(BlockquoteStartMarker);
+                    foreach (var line in quoteContent.ToString().Split('\n'))
+                    {
+                        var prefix = new string(' ', state.IndentLevel * 2);
+                        sb.AppendLine($"{prefix}{MarkupParser.Escape(line.Trim())}");
+                    }
+                    sb.AppendLine(BlockquoteEndMarker);
+                }
+                else
+                {
+                    foreach (var line in quoteContent.ToString().Split('\n'))
+                    {
+                        var prefix = new string(' ', state.IndentLevel * 2);
                         sb.AppendLine($"{prefix}> {line.Trim()}");
+                    }
                 }
                 state.LastWasBlock = true;
                 break;
