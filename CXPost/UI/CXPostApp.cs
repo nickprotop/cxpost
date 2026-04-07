@@ -41,6 +41,7 @@ public partial class CXPostApp : IDisposable
     private Window? _mainWindow;
     private CXPostConfig _config;
     private string _currentLayout = "classic";
+    private readonly LayoutModeManager _layoutModeManager = new();
 
     // Panels (created during layout setup)
     private TreeControl? _folderTree;
@@ -149,6 +150,7 @@ public partial class CXPostApp : IDisposable
             .AddColumn("From", width: 24)
             .AddColumn("Subject")
             .AddColumn("Date", TextJustification.Right, width: 12)
+            .AddColumn("Preview", width: 0)  // Hidden by default, shown in Triage mode
             .WithSorting()
             .WithMultiSelect()
             .OnSelectedRowChanged(OnMessageSelected)

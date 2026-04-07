@@ -24,6 +24,14 @@ public partial class CXPostApp
 
         _toolbar.Clear();
 
+        // Mode indicator when not in Compact mode
+        if (_layoutModeManager.CurrentMode != LayoutMode.Compact)
+        {
+            var modeLabel = _layoutModeManager.CurrentMode == LayoutMode.Focus ? "Focus" : "Triage";
+            AddToolbarButton($"[{modeLabel}]", () => TransitionToMode(() => _layoutModeManager.GoBack()));
+            _toolbar.AddItem(new SeparatorControl());
+        }
+
         var hasMessage = GetSelectedMessage() != null;
         var isDashboard = _dashboardPanel?.Visible == true;
         var checkedCount = GetCheckedCount();

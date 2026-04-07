@@ -57,7 +57,7 @@ public partial class CXPostApp
             for (var i = 0; i < messages.Count; i++)
             {
                 var msg = messages[i];
-                var (star, clip, from, subject, date) = FormatMessageRow(msg);
+                var (star, clip, from, subject, date, snippet) = FormatMessageRow(msg);
                 var key = (msg.FolderId, msg.Uid);
 
                 if (searchExisting.TryGetValue(key, out var rowIdx))
@@ -67,11 +67,12 @@ public partial class CXPostApp
                     _messageTable.UpdateCell(rowIdx, 2, from);
                     _messageTable.UpdateCell(rowIdx, 3, subject);
                     _messageTable.UpdateCell(rowIdx, 4, date);
+                    _messageTable.UpdateCell(rowIdx, 5, snippet);
                     _messageTable.GetRow(rowIdx).Tag = msg;
                 }
                 else
                 {
-                    var row = new TableRow(star, clip, from, subject, date) { Tag = msg };
+                    var row = new TableRow(star, clip, from, subject, date, snippet) { Tag = msg };
                     _messageTable.InsertRow(i, row);
 
                     searchExisting.Clear();
@@ -99,8 +100,8 @@ public partial class CXPostApp
             _messageTable.ClearRows();
             foreach (var msg in messages)
             {
-                var (star, clip, from, subject, date) = FormatMessageRow(msg);
-                var row = new TableRow(star, clip, from, subject, date) { Tag = msg };
+                var (star, clip, from, subject, date, snippet) = FormatMessageRow(msg);
+                var row = new TableRow(star, clip, from, subject, date, snippet) { Tag = msg };
                 _messageTable.AddRow(row);
             }
             return;
@@ -143,7 +144,7 @@ public partial class CXPostApp
         for (var i = 0; i < messages.Count; i++)
         {
             var msg = messages[i];
-            var (star, clip, from, subject, date) = FormatMessageRow(msg);
+            var (star, clip, from, subject, date, snippet) = FormatMessageRow(msg);
 
             if (existing.TryGetValue(msg.Uid, out var rowIdx))
             {
@@ -153,12 +154,13 @@ public partial class CXPostApp
                 _messageTable.UpdateCell(rowIdx, 2, from);
                 _messageTable.UpdateCell(rowIdx, 3, subject);
                 _messageTable.UpdateCell(rowIdx, 4, date);
+                _messageTable.UpdateCell(rowIdx, 5, snippet);
                 _messageTable.GetRow(rowIdx).Tag = msg;
             }
             else
             {
                 // Insert at correct position
-                var row = new TableRow(star, clip, from, subject, date) { Tag = msg };
+                var row = new TableRow(star, clip, from, subject, date, snippet) { Tag = msg };
                 _messageTable.InsertRow(i, row);
 
                 // Rebuild lookup — indices after insertion shifted
@@ -191,7 +193,8 @@ public partial class CXPostApp
         }
     }
 
-    private static (string star, string clip, string from, string subject, string date) FormatMessageRow(MailMessage msg)
+    private static (string star, string clip, string from, string subject, string date, string snippet)
+        FormatMessageRow(MailMessage msg)
     {
         var star = msg.IsFlagged ? "[yellow]\u2605[/]" : "[grey35]\u2606[/]";
         var clip = msg.HasAttachments ? "[grey70]\U0001f4ce[/]" : "";
@@ -202,7 +205,16 @@ public partial class CXPostApp
             ? $"[{ColorScheme.ReadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]"
             : $"[{ColorScheme.UnreadMarkup}]{MarkupParser.Escape(msg.Subject ?? "(no subject)")}[/]";
         var date = FormatDate(msg.Date);
-        return (star, clip, from, subject, date);
+
+        var snippet = "";
+        if (msg.BodyPlain != null)
+        {
+            var text = msg.BodyPlain.Replace('\n', ' ').Replace('\r', ' ').Trim();
+            if (text.Length > 60) text = text[..60];
+            snippet = $"[grey42]{MarkupParser.Escape(text)}[/]";
+        }
+
+        return (star, clip, from, subject, date, snippet);
     }
 
     private void OnMessageSelected(object? sender, int rowIndex)
