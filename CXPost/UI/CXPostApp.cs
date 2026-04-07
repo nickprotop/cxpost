@@ -445,7 +445,7 @@ public partial class CXPostApp : IDisposable
 
             // Message strip (narrow) — simple header, no sync/starred buttons
             var stripWidth = _layoutModeManager.IsStripVisible ? LayoutModeManager.StripWidth : 0;
-            var stripColumn = new ColumnContainer(_mainGrid) { Width = stripWidth };
+            var stripColumn = new ColumnContainer(_mainGrid) { Width = stripWidth, BackgroundColor = Color.Transparent };
             if (!_layoutModeManager.IsStripVisible)
                 stripColumn.Visible = false;
             stripColumn.AddContent(_readModeList!);
@@ -455,10 +455,11 @@ public partial class CXPostApp : IDisposable
                 _mainGrid.AddColumn(stripColumn);
 
             // Separator column (thin vertical line, like cxtop dashboard)
-            var sepCol = new ColumnContainer(_mainGrid) { Width = 1 };
+            var sepCol = new ColumnContainer(_mainGrid) { Width = 1, BackgroundColor = Color.Transparent };
             sepCol.AddContent(new SeparatorControl
             {
                 ForegroundColor = ColorScheme.BorderColor,
+                BackgroundColor = Color.Transparent,
                 VerticalAlignment = VerticalAlignment.Fill
             });
             _mainGrid.AddColumn(sepCol);

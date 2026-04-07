@@ -221,7 +221,9 @@ public partial class CXPostApp
         UpdatePreviewHeader(msg);
         UpdateBottomBar();
         UpdateToolbar();
-        RetainMessageListFocus();
+        // Don't steal focus from the read mode strip
+        if (!_layoutModeManager.IsReadMode)
+            RetainMessageListFocus();
 
         _messageListCoordinator.SelectMessage(msg);
 
