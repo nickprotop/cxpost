@@ -221,9 +221,7 @@ public partial class CXPostApp
         UpdatePreviewHeader(msg);
         UpdateBottomBar();
         UpdateToolbar();
-        // Don't steal focus from the read mode strip
-        if (!_layoutModeManager.IsReadMode)
-            RetainMessageListFocus();
+        RetainMessageListFocus();
 
         _messageListCoordinator.SelectMessage(msg);
 
@@ -413,6 +411,8 @@ public partial class CXPostApp
     public void RetainMessageListFocus()
     {
         if (_messageTable == null || _mainWindow == null) return;
+        // In read mode, the strip (ListControl) should keep focus, not the table
+        if (_layoutModeManager.IsReadMode) return;
         var focused = _mainWindow.FocusManager?.FocusedControl;
         // If nothing is focused, or a non-interactive control got focus, restore to table
         if (focused == null || focused == _readingPane || focused is MarkupControl || focused is ScrollablePanelControl)
