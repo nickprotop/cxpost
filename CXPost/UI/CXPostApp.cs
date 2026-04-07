@@ -219,6 +219,8 @@ public partial class CXPostApp : IDisposable
             {
                 ShowMessagePreview(msg);
                 UpdatePreviewHeader(msg);
+                UpdateToolbar();
+                UpdateBottomBar();
             }
         };
 
