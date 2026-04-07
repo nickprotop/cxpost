@@ -322,25 +322,46 @@ public partial class CXPostApp
     {
         if (_previewPanelHeader == null) return;
 
+        _previewPanelHeader.ClearAll();
+
         if (msg != null && _messageTable != null)
         {
             var selectedIdx = _messageTable.SelectedRowIndex + 1;
             var total = _messageTable.RowCount;
             var status = msg.IsRead ? "[grey50]Read[/]" : "[yellow]Unread[/]";
             var date = msg.Date.ToString("MMM d, yyyy 'at' h:mm tt");
-            var headerText = $"[grey70]{selectedIdx} of {total}[/]  {status}  [grey50]{date}[/]";
-
-            if (_layoutModeManager.IsReadMode && !_layoutModeManager.IsStripVisible)
-                headerText += $"  [{ColorScheme.PrimaryMarkup}]\u25c0 Show List (Ctrl+B)[/]";
-
-            _previewPanelHeader.SetContent([headerText]);
+            _previewPanelHeader.AddLeftText(
+                $"[grey70]{selectedIdx} of {total}[/]  {status}  [grey50]{date}[/]");
         }
         else
         {
-            var headerText = "[grey70]Preview[/]";
-            if (_layoutModeManager.IsReadMode && !_layoutModeManager.IsStripVisible)
-                headerText += $"  [{ColorScheme.PrimaryMarkup}]\u25c0 Show List (Ctrl+B)[/]";
-            _previewPanelHeader.SetContent([headerText]);
+            _previewPanelHeader.AddLeftText("[grey70]Preview[/]");
+        }
+
+        // Read mode button on the right
+        if (GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
+        {
+            if (_layoutModeManager.IsReadMode)
+            {
+                _previewPanelHeader.AddRightText(
+                    $"[{ColorScheme.PrimaryMarkup}]\u25a3 List[/] [grey50](F4)[/]",
+                    () => ExitReadMode());
+            }
+            else
+            {
+                _previewPanelHeader.AddRightText(
+                    $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [grey50](F4)[/]",
+                    () => EnterReadMode());
+            }
+        }
+
+        // Strip toggle hint when in read mode with strip hidden
+        if (_layoutModeManager.IsReadMode && !_layoutModeManager.IsStripVisible)
+        {
+            _previewPanelHeader.AddLeftSeparator();
+            _previewPanelHeader.AddLeftText(
+                $"[{ColorScheme.PrimaryMarkup}]\u25c0 Show List[/] [grey50](Ctrl+B)[/]",
+                () => ToggleReadStrip());
         }
     }
 }

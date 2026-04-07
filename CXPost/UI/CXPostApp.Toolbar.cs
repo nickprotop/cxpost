@@ -170,22 +170,6 @@ public partial class CXPostApp
             _rightPanelHeader.AddLeftText(starLabel, ToggleFlaggedFilter);
         }
 
-        // Read mode toggle on the right side
-        if (GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
-        {
-            if (_layoutModeManager.IsReadMode)
-            {
-                _rightPanelHeader.AddRightText(
-                    $"[{ColorScheme.PrimaryMarkup}]\u25a3 List[/] [grey50](F4)[/]",
-                    () => ExitReadMode());
-            }
-            else
-            {
-                _rightPanelHeader.AddRightText(
-                    $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [grey50](F4)[/]",
-                    () => EnterReadMode());
-            }
-        }
     }
 
     private void SimulateKey(ConsoleKey key, bool ctrl = false, bool shift = false)

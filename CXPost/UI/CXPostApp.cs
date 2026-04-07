@@ -56,7 +56,7 @@ public partial class CXPostApp : IDisposable
     private MarkupControl? _topStatusRight;
     private MarkupControl? _leftPanelHeader;
     private StatusBarControl? _rightPanelHeader;
-    private MarkupControl? _previewPanelHeader;
+    private StatusBarControl? _previewPanelHeader;
 
     // Track preview column and its splitter for wide layout visibility
     private ColumnContainer? _previewColumn;
@@ -215,9 +215,9 @@ public partial class CXPostApp : IDisposable
             .Build();
         _rightPanelHeader.BackgroundColor = ColorScheme.PanelHeaderBackground;
 
-        _previewPanelHeader = Controls.Markup("[grey70]Preview[/]")
+        _previewPanelHeader = Controls.StatusBar()
+            .AddLeftText("[grey70]Preview[/]")
             .WithMargin(1, 0, 0, 0)
-            .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
         _previewPanelHeader.BackgroundColor = ColorScheme.PanelHeaderBackground;
 
