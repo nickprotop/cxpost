@@ -217,6 +217,13 @@ public partial class CXPostApp : IDisposable
         {
             if (item?.Tag is MailMessage msg)
             {
+                // Sync selection back to message table so GetSelectedMessage() works
+                if (_messageTable != null && _readModeList != null)
+                {
+                    var idx = _readModeList.SelectedIndex;
+                    if (idx >= 0 && idx < _messageTable.RowCount)
+                        _messageTable.SelectedRowIndex = idx;
+                }
                 ShowMessagePreview(msg);
                 UpdatePreviewHeader(msg);
                 UpdateToolbar();
@@ -447,7 +454,16 @@ public partial class CXPostApp : IDisposable
             else
                 _mainGrid.AddColumn(stripColumn);
 
-            // Reading pane (fills) — no draggable splitter
+            // Separator column (thin vertical line, like cxtop dashboard)
+            var sepCol = new ColumnContainer(_mainGrid) { Width = 1 };
+            sepCol.AddContent(new SeparatorControl
+            {
+                ForegroundColor = ColorScheme.BorderColor,
+                VerticalAlignment = VerticalAlignment.Fill
+            });
+            _mainGrid.AddColumn(sepCol);
+
+            // Reading pane (fills)
             _previewColumn = new ColumnContainer(_mainGrid);
             _previewColumn.AddContent(_previewPanelHeader!);
             _previewColumn.AddContent(_readingPane!);
