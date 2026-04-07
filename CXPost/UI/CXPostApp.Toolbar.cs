@@ -123,7 +123,7 @@ public partial class CXPostApp
             _bottomBar.AddRightText($"[{foldersColor}]Folders[/] [{ColorScheme.MutedMarkup}]F2[/]",
                 () => ToggleFolderTree());
 
-            if (!_layoutModeManager.IsReadMode)
+            if (!_layoutModeManager.IsReadMode && !isDashboard)
             {
                 _bottomBar.AddRightSeparator();
                 var previewColor = _layoutModeManager.IsPreviewHidden ? ColorScheme.MutedMarkup : ColorScheme.PrimaryMarkup;
