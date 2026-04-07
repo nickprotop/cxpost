@@ -29,6 +29,7 @@ public partial class CXPostApp
         UpdateFocusDimmingPanes();
 
         _mainWindow!.PostBufferPaint += FocusDimmingOverlay;
+        _mainWindow.PostBufferPaint += TableRowAnimationOverlay;
         _mainWindow.FocusManager.FocusChanged += OnFocusChangedForDimming;
     }
 
@@ -116,6 +117,11 @@ public partial class CXPostApp
             int splitterX = col.ActualX - 1;
             _focusDimming.ApplySplitterAccent(buffer, splitterX, col.ActualY, col.ActualHeight);
         }
+    }
+
+    private void TableRowAnimationOverlay(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)
+    {
+        _messageTable?.ApplyRowAnimationOverlays(buffer);
     }
 
     public void SuspendFocusDimming()

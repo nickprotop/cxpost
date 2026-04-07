@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using SharpConsoleUI;
 using CXPost.Models;
 using CXPost.Services;
 using CXPost.UI;
@@ -112,11 +113,19 @@ public class MailSyncCoordinator
                     var afterCount = _cache.GetCachedUids(folder.Id).Count;
                     totalMessages += afterCount - beforeCount;
 
+                    var newInFolder = afterCount - beforeCount;
                     _syncingFolderIds.TryRemove(folder.Id, out _);
                     _app.Value.EnqueueUiAction(() =>
                     {
                         _app.Value.RefreshFolderTree();
+                        var prevCount = _app.Value.MessageTableRowCount;
                         _app.Value.RefreshCurrentMessageListIfFolder(folder.Id);
+                        var newCount = _app.Value.MessageTableRowCount;
+                        var added = newCount - prevCount;
+                        for (var ri = 0; ri < Math.Min(added, 5); ri++)
+                            _app.Value.HighlightMessageRow(ri, Color.Cyan1, TimeSpan.FromMilliseconds(400));
+                        if (newInFolder > 0)
+                            _app.Value.PulseFolderNode(folder.Id, Color.Cyan1, 2, TimeSpan.FromMilliseconds(300));
                     });
                 }
             }
@@ -254,7 +263,12 @@ public class MailSyncCoordinator
             {
                 _app.Value.DismissMessage(syncMsgId);
                 _app.Value.RefreshFolderTree();
+                var prevCount = _app.Value.MessageTableRowCount;
                 _app.Value.RefreshCurrentMessageListIfFolder(folder.Id);
+                var newCount = _app.Value.MessageTableRowCount;
+                var added = newCount - prevCount;
+                for (var ri = 0; ri < Math.Min(added, 5); ri++)
+                    _app.Value.HighlightMessageRow(ri, Color.Cyan1, TimeSpan.FromMilliseconds(400));
                 _app.Value.ShowInfo($"Synced {folder.DisplayName}");
             });
         }

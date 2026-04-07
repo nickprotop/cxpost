@@ -159,6 +159,9 @@ public partial class CXPostApp : IDisposable
         _messageTable.HoverEnabled = false;
         _messageTable.MultiSelectionChanged += (_, count) =>
         {
+            var rowIdx = _messageTable.SelectedRowIndex;
+            if (rowIdx >= 0)
+                _messageTable.FlashRow(rowIdx, ColorScheme.SelectedRow, TimeSpan.FromMilliseconds(150));
             UpdateToolbar();
             UpdateHelpBar();
             if (count > 0)
@@ -480,6 +483,24 @@ public partial class CXPostApp : IDisposable
         _pendingUiActions.Enqueue(action);
     }
 
+
+    /// <summary>Current row count of the message table, or 0 if not available.</summary>
+    public int MessageTableRowCount => _messageTable?.RowCount ?? 0;
+
+    /// <summary>Highlights a row in the message table (used for new message animation).</summary>
+    public void HighlightMessageRow(int rowIndex, Color color, TimeSpan duration)
+    {
+        _messageTable?.HighlightRow(rowIndex, color, duration);
+    }
+
+    /// <summary>Pulses a folder tree node by folder ID (used for sync animation).</summary>
+    public void PulseFolderNode(int folderId, Color color, int pulseCount, TimeSpan pulseDuration)
+    {
+        if (_folderTree == null) return;
+        var folderNode = _folderTree.FindNodeByTag(new FolderTag(folderId));
+        if (folderNode != null)
+            _folderTree.PulseNode(folderNode, color, pulseCount, pulseDuration);
+    }
 
     public void Dispose()
     {

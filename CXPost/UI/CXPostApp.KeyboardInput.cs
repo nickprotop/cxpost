@@ -437,6 +437,9 @@ public partial class CXPostApp
                                 DismissMessage(progressId);
                                 ShowSuccess(label);
                                 if (_isFlaggedFilterActive) RefreshFlaggedHeader();
+                                var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
+                                if (rowIdx >= 0)
+                                    _messageTable?.FlashCell(rowIdx, 0, Color.Yellow, TimeSpan.FromMilliseconds(200));
                             });
                         }
                         catch (Exception ex) { EnqueueUiAction(() => ShowError($"Toggle flag failed: {ex.Message}")); }
@@ -489,6 +492,12 @@ public partial class CXPostApp
                             {
                                 DismissMessage(progressId);
                                 ShowSuccess(label);
+                                var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
+                                if (rowIdx >= 0)
+                                {
+                                    var flashColor = willRead ? Color.Grey50 : Color.White;
+                                    _messageTable?.FlashRow(rowIdx, flashColor, TimeSpan.FromMilliseconds(250));
+                                }
                             });
                         }
                         catch (Exception ex) { EnqueueUiAction(() => ShowError($"Toggle read failed: {ex.Message}")); }
