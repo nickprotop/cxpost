@@ -8,6 +8,7 @@ using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
 using SharpConsoleUI.Rendering;
+using SharpConsoleUI.Windows;
 using CXPost.Coordinators;
 using CXPost.Models;
 using CXPost.Services;
@@ -96,33 +97,35 @@ public partial class CXPostApp
         _readingPane.AddControl(placeholder);
     }
 
-    private void ReadingPaneFadeOverlay(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)
-    {
-        if (_readingFadeIntensity <= 0.01f || _readingPane == null) return;
-
-        // Only dim the reading pane area, not the entire window
-        var paneRect = new LayoutRect(
-            _readingPane.ActualX, _readingPane.ActualY,
-            _readingPane.ActualWidth, _readingPane.ActualHeight);
-        ColorBlendHelper.ApplyColorOverlay(buffer, Color.Black, _readingFadeIntensity, 0.5f, paneRect);
-    }
-
     private void TriggerReadingPaneFadeIn()
     {
-        _readingFadeIntensity = 0.35f;
+        if (_readingPane == null || _mainWindow == null) return;
+
+        float fadeIntensity = 0.35f;
+        WindowRenderer.BufferPaintDelegate? handler = null;
+        handler = (buffer, dirtyRegion, clipRect) =>
+        {
+            if (fadeIntensity <= 0.01f) return;
+            var paneRect = new LayoutRect(
+                _readingPane.ActualX, _readingPane.ActualY,
+                _readingPane.ActualWidth, _readingPane.ActualHeight);
+            ColorBlendHelper.ApplyColorOverlay(buffer, Color.Black, fadeIntensity, 0.5f, paneRect);
+        };
+
+        _mainWindow.PostBufferPaint += handler;
         _ws.Animations.Animate(
-            from: 0.35f,
-            to: 0.0f,
+            from: 0.35f, to: 0.0f,
             duration: TimeSpan.FromMilliseconds(250),
             easing: EasingFunctions.EaseOut,
             onUpdate: t =>
             {
-                _readingFadeIntensity = t;
+                fadeIntensity = t;
                 _mainWindow?.Invalidate(redrawAll: true);
             },
             onComplete: () =>
             {
-                _readingFadeIntensity = 0f;
+                fadeIntensity = 0f;
+                _mainWindow!.PostBufferPaint -= handler;
             });
     }
 

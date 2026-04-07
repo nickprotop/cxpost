@@ -71,9 +71,6 @@ public partial class CXPostApp : IDisposable
     private CancellationTokenSource? _bodyFetchCts;
     private System.Threading.Timer? _bodyFetchDebounce;
 
-    // Reading pane content fade-in overlay
-    private float _readingFadeIntensity;
-
     // Tracks per-account background sync loops so they can be cancelled and restarted
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _syncLoopCts = new();
 
@@ -321,8 +318,8 @@ public partial class CXPostApp : IDisposable
             .OnKeyPressed(OnKeyPressed)
             .Build();
 
-        // Reading pane fade-in overlay: dims just the reading pane area, then animates away
-        _mainWindow.PostBufferPaint += ReadingPaneFadeOverlay;
+        // Focus dimming overlays (replaces standalone reading pane fade)
+        InitFocusDimming();
 
         // Confirm before quit
         _mainWindow.OnClosing += (_, args) =>
