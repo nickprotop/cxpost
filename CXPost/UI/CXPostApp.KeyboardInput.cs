@@ -366,6 +366,20 @@ public partial class CXPostApp
                     {
                         EnqueueUiAction(() =>
                         {
+                            // Animate checked rows fading out before removal
+                            if (_messageTable != null)
+                            {
+                                var checkedIndices = new List<int>();
+                                for (var i = 0; i < _messageTable.RowCount; i++)
+                                {
+                                    var row = _messageTable.GetRow(i);
+                                    if (row.Tag is MailMessage m && checkedMsgs.Any(cm => cm.Uid == m.Uid))
+                                        checkedIndices.Add(i);
+                                }
+                                if (checkedIndices.Count > 0)
+                                    _messageTable.AnimateRowsRemoval(checkedIndices.ToArray(), TimeSpan.FromMilliseconds(300));
+                            }
+
                             _messageListCoordinator.DeleteMultipleOptimistic(checkedMsgs, folder, _cts.Token);
                             ClearSelection();
                             ClearReadingPane();
@@ -397,6 +411,11 @@ public partial class CXPostApp
                             {
                                 EnqueueUiAction(() =>
                                 {
+                                    // Animate row fading out before permanent deletion
+                                    var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
+                                    if (rowIdx >= 0)
+                                        _messageTable?.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(300));
+
                                     _cacheService.DeleteMessage(folder.Id, msg.Uid);
                                     _messageListCoordinator.RefreshMessageList();
                                     var nextMsg = GetSelectedMessage();
@@ -419,6 +438,11 @@ public partial class CXPostApp
                     }
                     else
                     {
+                        // Animate row fading out before soft delete (move to trash)
+                        var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
+                        if (rowIdx >= 0)
+                            _messageTable?.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(300));
+
                         _messageListCoordinator.DeleteMessageOptimistic(msg, folder, _cts.Token);
                         var nextMsg = GetSelectedMessage();
                         if (nextMsg != null) ShowMessagePreview(nextMsg);
@@ -574,6 +598,20 @@ public partial class CXPostApp
                             }
                             EnqueueUiAction(() =>
                             {
+                                // Animate checked rows fading out before move
+                                if (_messageTable != null)
+                                {
+                                    var checkedIndices = new List<int>();
+                                    for (var i = 0; i < _messageTable.RowCount; i++)
+                                    {
+                                        var row = _messageTable.GetRow(i);
+                                        if (row.Tag is MailMessage m && checkedMsgs.Any(cm => cm.Uid == m.Uid))
+                                            checkedIndices.Add(i);
+                                    }
+                                    if (checkedIndices.Count > 0)
+                                        _messageTable.AnimateRowsRemoval(checkedIndices.ToArray(), TimeSpan.FromMilliseconds(300));
+                                }
+
                                 foreach (var msg in checkedMsgs)
                                 {
                                     _cacheService.DeleteMessage(folder.Id, msg.Uid);
@@ -616,6 +654,11 @@ public partial class CXPostApp
                                 }
                                 EnqueueUiAction(() =>
                                 {
+                                    // Animate row fading out before move
+                                    var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
+                                    if (rowIdx >= 0)
+                                        _messageTable?.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(300));
+
                                     _cacheService.DeleteMessage(folder.Id, msg.Uid);
                                     _messageListCoordinator.RefreshMessageList();
                                     ClearReadingPane();
