@@ -476,7 +476,10 @@ public partial class CXPostApp : IDisposable
             messageColumn.AddContent(_dashboardPanel!);
             _mainGrid.AddColumnWithSplitter(messageColumn);
 
+            var savedPreviewWidth = _layoutModeManager.GetSavedPreviewColumnWidth();
             _previewColumn = new ColumnContainer(_mainGrid);
+            if (savedPreviewWidth > 0)
+                _previewColumn.Width = savedPreviewWidth;
             _previewColumn.AddContent(_previewPanelHeader!);
             _previewColumn.AddContent(_readingPane!);
             _previewSplitter = _mainGrid.AddColumnWithSplitter(_previewColumn);

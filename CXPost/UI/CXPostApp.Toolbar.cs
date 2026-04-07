@@ -83,8 +83,6 @@ public partial class CXPostApp
             {
                 _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Esc[/][grey70]:Back[/]");
                 _bottomBar.AddLeftSeparator();
-                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Ctrl+B[/][grey70]:Toggle list[/]");
-                _bottomBar.AddLeftSeparator();
                 _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u2191\u2193[/][grey70]:Navigate[/]");
             }
             else if (checkedCount > 0)

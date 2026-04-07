@@ -338,22 +338,12 @@ public partial class CXPostApp
             _previewPanelHeader.AddLeftText("[grey70]Preview[/]");
         }
 
-        // Right side buttons
-        if (GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
+        // Read button (only in normal view, not read mode — read mode controls are in the bottom bar)
+        if (!_layoutModeManager.IsReadMode && GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
         {
-            // Read/List mode toggle (F4)
-            if (_layoutModeManager.IsReadMode)
-            {
-                _previewPanelHeader.AddRightText(
-                    $"[{ColorScheme.PrimaryMarkup}]\u25a3 List[/] [{ColorScheme.MutedMarkup}]F4[/]",
-                    () => ExitReadMode());
-            }
-            else
-            {
-                _previewPanelHeader.AddRightText(
-                    $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
-                    () => EnterReadMode());
-            }
+            _previewPanelHeader.AddRightText(
+                $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
+                () => EnterReadMode());
         }
     }
 }
