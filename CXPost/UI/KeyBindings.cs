@@ -23,6 +23,7 @@ public static class KeyBindings
 
     // Layout views
     public static readonly ConsoleKey ToggleTree = ConsoleKey.F2;          // F2
+    public static readonly ConsoleKey TogglePreview = ConsoleKey.F3;       // F3
     public static readonly ConsoleKey ReadMode = ConsoleKey.F4;            // F4
 
     // Reserved: SaveDraft (Ctrl+S conflicts with Search — not yet implemented)

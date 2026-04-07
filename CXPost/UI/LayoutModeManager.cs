@@ -21,6 +21,19 @@ public class LayoutModeManager
 
     public int GetSavedFolderWidth() => _savedFolderWidth;
 
+    // ── Preview panel toggle ────────────────────────────────────────────
+    public bool IsPreviewHidden { get; private set; }
+    private int _savedPreviewColumnWidth;
+
+    public void TogglePreview() => IsPreviewHidden = !IsPreviewHidden;
+
+    public void SavePreviewColumnWidth(int width)
+    {
+        if (width > 0) _savedPreviewColumnWidth = width;
+    }
+
+    public int GetSavedPreviewColumnWidth() => _savedPreviewColumnWidth;
+
     // ── Read mode ───────────────────────────────────────────────────────
     public bool IsReadMode { get; private set; }
     public bool IsStripVisible { get; private set; } = true;

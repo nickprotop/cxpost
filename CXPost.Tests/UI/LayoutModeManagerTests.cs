@@ -134,4 +134,52 @@ public class LayoutModeManagerTests
         Assert.True(mgr.IsFolderTreeHidden);
         Assert.False(mgr.IsReadMode);
     }
+
+    [Fact]
+    public void Initial_PreviewVisible()
+    {
+        var mgr = new LayoutModeManager();
+        Assert.False(mgr.IsPreviewHidden);
+    }
+
+    [Fact]
+    public void TogglePreview_HidesPreview()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.TogglePreview();
+        Assert.True(mgr.IsPreviewHidden);
+    }
+
+    [Fact]
+    public void TogglePreview_Twice_ShowsPreview()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.TogglePreview();
+        mgr.TogglePreview();
+        Assert.False(mgr.IsPreviewHidden);
+    }
+
+    [Fact]
+    public void SavePreviewColumnWidth_PreservesWidth()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.SavePreviewColumnWidth(150);
+        Assert.Equal(150, mgr.GetSavedPreviewColumnWidth());
+    }
+
+    [Fact]
+    public void AllToggles_Independent()
+    {
+        var mgr = new LayoutModeManager();
+        mgr.ToggleFolderTree();
+        mgr.TogglePreview();
+        mgr.EnterReadMode();
+        Assert.True(mgr.IsFolderTreeHidden);
+        Assert.True(mgr.IsPreviewHidden);
+        Assert.True(mgr.IsReadMode);
+        mgr.TogglePreview();
+        Assert.True(mgr.IsFolderTreeHidden);
+        Assert.False(mgr.IsPreviewHidden);
+        Assert.True(mgr.IsReadMode);
+    }
 }
