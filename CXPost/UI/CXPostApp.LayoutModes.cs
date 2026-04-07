@@ -1,4 +1,9 @@
+using SharpConsoleUI;
 using SharpConsoleUI.Animation;
+using SharpConsoleUI.Controls;
+using SharpConsoleUI.Parsing;
+using CXPost.Models;
+using CXPost.UI.Components;
 
 namespace CXPost.UI;
 
@@ -98,6 +103,7 @@ public partial class CXPostApp
             _layoutModeManager.SavePreviewColumnWidth(columns[2].Width ?? 0);
 
         _layoutModeManager.EnterReadMode();
+        PopulateReadModeStrip();
         RebuildMainGrid();
         TriggerReadingPaneFadeIn();
 
@@ -112,6 +118,14 @@ public partial class CXPostApp
     private void ExitReadMode()
     {
         if (_mainGrid == null || !_layoutModeManager.IsReadMode) return;
+
+        // Sync strip selection back to message table
+        if (_readModeList != null && _messageTable != null)
+        {
+            var stripIdx = _readModeList.SelectedIndex;
+            if (stripIdx >= 0 && stripIdx < _messageTable.RowCount)
+                _messageTable.SelectedRowIndex = stripIdx;
+        }
 
         _layoutModeManager.ExitReadMode();
         RebuildMainGrid();
@@ -145,5 +159,35 @@ public partial class CXPostApp
         var msg = GetSelectedMessage();
         if (msg != null) UpdatePreviewHeader(msg);
         else UpdatePreviewHeader();
+    }
+
+    private void PopulateReadModeStrip()
+    {
+        if (_readModeList == null || _messageTable == null) return;
+
+        _readModeList.ClearItems();
+
+        for (var i = 0; i < _messageTable.RowCount; i++)
+        {
+            var row = _messageTable.GetRow(i);
+            if (row.Tag is not MailMessage msg) continue;
+
+            var senderName = msg.FromName ?? msg.FromAddress ?? "Unknown";
+            if (senderName.Length > 25) senderName = senderName[..22] + "...";
+
+            var textColor = msg.IsRead ? ColorScheme.ReadMarkup : ColorScheme.UnreadMarkup;
+            var text = $"[{textColor}]{MarkupParser.Escape(senderName)}[/]";
+
+            var icon = msg.IsFlagged ? "\u2605" : null;
+            var iconColor = msg.IsFlagged ? (Color?)Color.Yellow : null;
+
+            var item = new ListItem(text, icon, iconColor) { Tag = msg };
+            _readModeList.AddItem(item);
+        }
+
+        // Sync selection from table
+        var selectedIdx = _messageTable.SelectedRowIndex;
+        if (selectedIdx >= 0 && selectedIdx < _readModeList.Items.Count)
+            _readModeList.SelectedIndex = selectedIdx;
     }
 }

@@ -51,6 +51,7 @@ public partial class CXPostApp : IDisposable
     private HorizontalGridControl? _mainGrid;
     private ScrollablePanelControl? _dashboardPanel;
     private HorizontalSplitterControl? _listReadingSplitter;
+    private ListControl? _readModeList;
 
     // Status bar controls
     private MarkupControl? _topStatusRight;
@@ -200,6 +201,23 @@ public partial class CXPostApp : IDisposable
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
         _dashboardPanel.Visible = false;
+
+        // Read mode strip (ListControl replacing crushed table)
+        _readModeList = Controls.List()
+            .WithHighlightColors(Color.White, Color.Grey37)
+            .WithForegroundColor(ColorScheme.SecondaryText)
+            .Build();
+        _readModeList.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _readModeList.VerticalAlignment = VerticalAlignment.Fill;
+
+        _readModeList.SelectedItemChanged += (_, item) =>
+        {
+            if (item?.Tag is MailMessage msg)
+            {
+                ShowMessagePreview(msg);
+                UpdatePreviewHeader(msg);
+            }
+        };
 
         // Panel headers
         _leftPanelHeader = Controls.Markup("[grey70]Folders[/]")
@@ -419,8 +437,7 @@ public partial class CXPostApp : IDisposable
             if (!_layoutModeManager.IsStripVisible)
                 stripColumn.Visible = false;
             stripColumn.AddContent(_rightPanelHeader!);
-            stripColumn.AddContent(_messageTable!);
-            stripColumn.AddContent(_dashboardPanel!);
+            stripColumn.AddContent(_readModeList!);
             if (!_layoutModeManager.IsFolderTreeHidden)
                 _mainGrid.AddColumnWithSplitter(stripColumn);
             else
@@ -434,10 +451,6 @@ public partial class CXPostApp : IDisposable
 
             // Hide horizontal splitter (not used in read mode)
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
-
-            // Configure table for strip mode
-            _messageTable!.ShowHeader = false;
-            _messageTable.CheckboxMode = false;
 
             _mainGrid.Invalidate();
             return;

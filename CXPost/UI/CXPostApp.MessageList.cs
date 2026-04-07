@@ -189,6 +189,10 @@ public partial class CXPostApp
             UpdateBottomBar();
             UpdateToolbar();
         }
+
+        // Refresh read mode strip if active
+        if (_layoutModeManager.IsReadMode)
+            PopulateReadModeStrip();
     }
 
     private static (string star, string clip, string from, string subject, string date)
