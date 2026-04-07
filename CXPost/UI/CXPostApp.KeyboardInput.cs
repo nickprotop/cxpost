@@ -30,6 +30,13 @@ public partial class CXPostApp
             e.Handled = true;
             return;
         }
+        // F3: toggle preview panel visibility
+        if (e.KeyInfo.Key == KeyBindings.TogglePreview)
+        {
+            TogglePreview();
+            e.Handled = true;
+            return;
+        }
         // F4: toggle read mode
         if (e.KeyInfo.Key == KeyBindings.ReadMode)
         {

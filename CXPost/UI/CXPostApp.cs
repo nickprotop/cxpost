@@ -402,17 +402,60 @@ public partial class CXPostApp : IDisposable
     {
         if (_mainGrid == null) return;
 
-        // Preserve folder column width across rebuilds
         var columns = _mainGrid.Columns;
         var folderWidth = columns.Count > 0 ? columns[0].Width ?? 28 : 28;
 
         _mainGrid.ClearColumns();
 
+        if (_layoutModeManager.IsReadMode)
+        {
+            // ── Read mode: [folders] | narrow strip | full reader ────────
+            if (!_layoutModeManager.IsFolderTreeHidden)
+            {
+                var folderColumn = new ColumnContainer(_mainGrid) { Width = folderWidth };
+                folderColumn.AddContent(_leftPanelHeader!);
+                folderColumn.AddContent(_folderTree!);
+                _mainGrid.AddColumn(folderColumn);
+            }
+
+            // Message strip (narrow)
+            var stripWidth = _layoutModeManager.IsStripVisible ? LayoutModeManager.StripWidth : 0;
+            var stripColumn = new ColumnContainer(_mainGrid) { Width = stripWidth };
+            if (!_layoutModeManager.IsStripVisible)
+                stripColumn.Visible = false;
+            stripColumn.AddContent(_rightPanelHeader!);
+            stripColumn.AddContent(_messageTable!);
+            stripColumn.AddContent(_dashboardPanel!);
+            if (!_layoutModeManager.IsFolderTreeHidden)
+                _mainGrid.AddColumnWithSplitter(stripColumn);
+            else
+                _mainGrid.AddColumn(stripColumn);
+
+            // Reading pane (fills)
+            _previewColumn = new ColumnContainer(_mainGrid);
+            _previewColumn.AddContent(_previewPanelHeader!);
+            _previewColumn.AddContent(_readingPane!);
+            _previewSplitter = _mainGrid.AddColumnWithSplitter(_previewColumn);
+
+            // Hide horizontal splitter (not used in read mode)
+            if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+
+            // Configure table for strip mode
+            _messageTable!.ShowHeader = false;
+            _messageTable.CheckboxMode = false;
+
+            _mainGrid.Invalidate();
+            return;
+        }
+
+        // ── Restore table defaults when not in read mode ─────────────────
+        _messageTable!.ShowHeader = true;
+
         // Left column: folder tree (same in both layouts)
-        var folderColumn = new ColumnContainer(_mainGrid) { Width = folderWidth };
-        folderColumn.AddContent(_leftPanelHeader!);
-        folderColumn.AddContent(_folderTree!);
-        _mainGrid.AddColumn(folderColumn);
+        var mainFolderColumn = new ColumnContainer(_mainGrid) { Width = folderWidth };
+        mainFolderColumn.AddContent(_leftPanelHeader!);
+        mainFolderColumn.AddContent(_folderTree!);
+        _mainGrid.AddColumn(mainFolderColumn);
 
         if (_currentLayout == "wide")
         {
@@ -430,6 +473,12 @@ public partial class CXPostApp : IDisposable
 
             // Horizontal splitter not used in wide layout
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+
+            // Respect preview hidden state
+            if (_layoutModeManager.IsPreviewHidden)
+            {
+                if (_previewColumn != null) _previewColumn.Width = 0;
+            }
         }
         else
         {
@@ -446,6 +495,14 @@ public partial class CXPostApp : IDisposable
             _mainGrid.AddColumnWithSplitter(rightColumn);
 
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = true;
+
+            // Respect preview hidden state
+            if (_layoutModeManager.IsPreviewHidden)
+            {
+                if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
+                if (_previewPanelHeader != null) _previewPanelHeader.Visible = false;
+                if (_readingPane != null) _readingPane.Visible = false;
+            }
         }
 
         _mainGrid.Invalidate();

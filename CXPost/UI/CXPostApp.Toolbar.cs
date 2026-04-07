@@ -66,6 +66,16 @@ public partial class CXPostApp
                 ? "\u25b6 Folders"
                 : "\u25c0 Folders";
             AddToolbarButton(treeLabel, () => ToggleFolderTree());
+
+            // Preview panel toggle (only outside read mode)
+            if (!_layoutModeManager.IsReadMode)
+            {
+                var previewLabel = _layoutModeManager.IsPreviewHidden
+                    ? "\u25b6 Preview"
+                    : "\u25c0 Preview";
+                AddToolbarButton(previewLabel, () => TogglePreview());
+            }
+
             var layoutLabel = _currentLayout == "classic" ? "\u25eb Wide" : "\u2b12 Classic";
             AddToolbarButton(layoutLabel, () => SimulateKey(ConsoleKey.F8));
             AddToolbarButton("\u2699 Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
@@ -116,6 +126,12 @@ public partial class CXPostApp
 
             _helpBar.Add("F2", _layoutModeManager.IsFolderTreeHidden ? "Show Folders" : "Hide Folders",
                 () => ToggleFolderTree());
+
+            if (!_layoutModeManager.IsReadMode)
+            {
+                _helpBar.Add("F3", _layoutModeManager.IsPreviewHidden ? "Show Preview" : "Hide Preview",
+                    () => TogglePreview());
+            }
 
             if (_layoutModeManager.IsReadMode)
             {
