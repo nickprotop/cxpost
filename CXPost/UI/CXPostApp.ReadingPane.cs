@@ -338,12 +338,6 @@ public partial class CXPostApp
             _previewPanelHeader.AddLeftText("[grey70]Preview[/]");
         }
 
-        // Read button (only in normal view, not read mode — read mode controls are in the bottom bar)
-        if (!_layoutModeManager.IsReadMode && GetSelectedMessage() != null && !(_dashboardPanel?.Visible == true))
-        {
-            _previewPanelHeader.AddRightText(
-                $"[{ColorScheme.PrimaryMarkup}]\U0001f4d6 Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
-                () => EnterReadMode());
-        }
+        // View controls are in the bottom bar — preview header stays clean
     }
 }
