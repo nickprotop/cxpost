@@ -210,7 +210,7 @@ public partial class CXPostApp
             SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true, showFlaggedFilter: true);
 
             ClearReadingPane();
-            UpdateHelpBar();
+            UpdateBottomBar();
             UpdateToolbar();
         }
         else if (args.Node?.Tag is AggregatedTag agg)
@@ -242,7 +242,7 @@ public partial class CXPostApp
                 SetRightPanelHeader($"[grey70]Messages[/] [grey50]({allMessages.Count})[/]", showSyncAction: true, showFlaggedFilter: true);
 
                 ClearReadingPane();
-                UpdateHelpBar();
+                UpdateBottomBar();
                 UpdateToolbar();
             }
         }
@@ -259,7 +259,7 @@ public partial class CXPostApp
                 _statusBar.UpdateBreadcrumb(account.Name, "Dashboard",
                     onAppClick: NavigateToAllAccounts);
                 SetRightPanelHeader("[grey70]Account Dashboard[/]");
-                UpdateHelpBar();
+                UpdateBottomBar();
                 UpdateToolbar();
             }
         }
@@ -273,7 +273,7 @@ public partial class CXPostApp
             _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard",
                 onAppClick: NavigateToAllAccounts);
             SetRightPanelHeader("[grey70]Dashboard[/]");
-            UpdateHelpBar();
+            UpdateBottomBar();
             UpdateToolbar();
         }
     }
@@ -387,7 +387,7 @@ public partial class CXPostApp
             onAccountClick: account != null ? () => NavigateToAccount(account.Id) : null);
         SetRightPanelHeader($"[grey70]Messages[/] [grey50]({messages.Count})[/]", showSyncAction: true, showFlaggedFilter: true);
         ClearReadingPane();
-        UpdateHelpBar();
+        UpdateBottomBar();
         UpdateToolbar();
     }
 
@@ -407,7 +407,7 @@ public partial class CXPostApp
             Components.AccountDashboard.BuildAllAccountsDashboard(_config.Accounts, _cacheService, GetDashboardActions()));
         _statusBar.UpdateBreadcrumb("All Accounts", "Dashboard", onAppClick: NavigateToAllAccounts);
         SetRightPanelHeader("[grey70]Dashboard[/]");
-        UpdateHelpBar();
+        UpdateBottomBar();
         UpdateToolbar();
     }
 
@@ -430,7 +430,7 @@ public partial class CXPostApp
             Components.AccountDashboard.BuildAccountDashboard(account, _cacheService, GetDashboardActions()));
         _statusBar.UpdateBreadcrumb(account.Name, "Dashboard", onAppClick: NavigateToAllAccounts);
         SetRightPanelHeader("[grey70]Account Dashboard[/]");
-        UpdateHelpBar();
+        UpdateBottomBar();
         UpdateToolbar();
     }
 
@@ -445,7 +445,7 @@ public partial class CXPostApp
         ClearReadingPane();
         UpdatePreviewHeader();
         _messageListCoordinator.SelectFolder(null!);
-        UpdateHelpBar();
+        UpdateBottomBar();
         UpdateToolbar();
     }
 }

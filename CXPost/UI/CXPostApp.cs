@@ -34,7 +34,7 @@ public partial class CXPostApp : IDisposable
     private readonly SearchCoordinator _searchCoordinator;
     private readonly NotificationCoordinator _notificationCoordinator;
     private readonly Components.StatusBarBuilder _statusBar;
-    private readonly Components.HelpBar _helpBar;
+    private StatusBarControl? _bottomBar;
     private readonly ConcurrentQueue<Action> _pendingUiActions = new();
     private readonly CancellationTokenSource _cts = new();
 
@@ -118,7 +118,6 @@ public partial class CXPostApp : IDisposable
         _searchCoordinator = searchCoordinator;
         _notificationCoordinator = notificationCoordinator;
         _statusBar = new Components.StatusBarBuilder();
-        _helpBar = new Components.HelpBar(marginLeft: 1);
         _config = configService.Load();
         _currentLayout = _config.Layout == "last"
             ? (_config.LastLayout is "classic" or "wide" ? _config.LastLayout : "classic")
@@ -164,7 +163,7 @@ public partial class CXPostApp : IDisposable
             if (rowIdx >= 0)
                 _messageTable.FlashRow(rowIdx, ColorScheme.SelectedRow, TimeSpan.FromMilliseconds(150));
             UpdateToolbar();
-            UpdateHelpBar();
+            UpdateBottomBar();
             if (count > 0)
                 SetRightPanelHeader($"[grey70]{count} checked[/]", "Clear");
             else
@@ -266,18 +265,14 @@ public partial class CXPostApp : IDisposable
 
         UpdateToolbar();
 
-        // ── Bottom status bar (clickable help bar) ─────────────────────────
+        // ── Bottom status bar (contextual hints + view toggles) ────────────
 
-        var bottomHelpControl = _statusBar.BottomLeftControl;
-        bottomHelpControl.HorizontalAlignment = HorizontalAlignment.Left;
-        bottomHelpControl.Margin = new Margin(1, 0, 1, 0);
-
-        // Wire mouse clicks on the bottom bar to the HelpBar
-        bottomHelpControl.MouseClick += (_, e) =>
-        {
-            if (_helpBar.HandleClick(e.Position.X))
-                e.Handled = true;
-        };
+        _bottomBar = new StatusBarControl(stickyBottom: false);
+        _bottomBar.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _bottomBar.Margin = new Margin(1, 0, 1, 0);
+        _bottomBar.BackgroundColor = Color.Transparent;
+        _bottomBar.SeparatorChar = "\u2022";
+        _bottomBar.ShortcutLabelSeparator = ":";
 
         // Message bar (stacking transient messages)
         _messageBar = new Components.MessageBar();
@@ -287,13 +282,13 @@ public partial class CXPostApp : IDisposable
             .WithColor(ColorScheme.BorderColor)
             .Build();
 
-        var bottomBar = Controls.HorizontalGrid()
+        var bottomBarContainer = Controls.HorizontalGrid()
             .StickyBottom()
             .WithAlignment(HorizontalAlignment.Stretch)
-            .Column(col => col.Add(bottomHelpControl))
+            .Column(col => col.Add(_bottomBar))
             .Build();
-        bottomBar.BackgroundColor = ColorScheme.PanelBackground;
-        bottomBar.ForegroundColor = ColorScheme.SecondaryText;
+        bottomBarContainer.BackgroundColor = ColorScheme.PanelBackground;
+        bottomBarContainer.ForegroundColor = ColorScheme.SecondaryText;
 
         // ── Build window with gradient background ────────────────────────────
 
@@ -317,7 +312,7 @@ public partial class CXPostApp : IDisposable
             .AddControl(_messageBar.Rule)
             .AddControl(_messageBar.Control)
             .AddControl(bottomRule)
-            .AddControl(bottomBar)
+            .AddControl(bottomBarContainer)
             .WithAsyncWindowThread(MainLoopAsync)
             .OnKeyPressed(OnKeyPressed)
             .Build();
@@ -374,7 +369,7 @@ public partial class CXPostApp : IDisposable
 
         // Update initial status
         _statusBar.UpdateConnectionStatus(0, false);
-        UpdateHelpBar();
+        UpdateBottomBar();
         UpdateToolbar();
 
         // First-run: if no accounts configured, prompt for account setup

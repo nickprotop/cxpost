@@ -39,7 +39,7 @@ public partial class CXPostApp
 
         UpdateFocusDimmingPanes();
         UpdateToolbar();
-        UpdateHelpBar();
+        UpdateBottomBar();
     }
 
     private void TogglePreview()
@@ -81,7 +81,7 @@ public partial class CXPostApp
 
         UpdateFocusDimmingPanes();
         UpdateToolbar();
-        UpdateHelpBar();
+        UpdateBottomBar();
     }
 
     private void EnterReadMode()
@@ -103,7 +103,7 @@ public partial class CXPostApp
 
         UpdateFocusDimmingPanes();
         UpdateToolbar();
-        UpdateHelpBar();
+        UpdateBottomBar();
         var msg = GetSelectedMessage();
         if (msg != null) UpdatePreviewHeader(msg);
         else UpdatePreviewHeader();
@@ -118,7 +118,7 @@ public partial class CXPostApp
 
         UpdateFocusDimmingPanes();
         UpdateToolbar();
-        UpdateHelpBar();
+        UpdateBottomBar();
         var msg = GetSelectedMessage();
         if (msg != null) UpdatePreviewHeader(msg);
         else UpdatePreviewHeader();

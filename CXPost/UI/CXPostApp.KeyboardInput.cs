@@ -369,7 +369,7 @@ public partial class CXPostApp
                             _messageListCoordinator.DeleteMultipleOptimistic(checkedMsgs, folder, _cts.Token);
                             ClearSelection();
                             ClearReadingPane();
-                            UpdateHelpBar();
+                            UpdateBottomBar();
                             UpdateToolbar();
                         });
                     }
@@ -402,7 +402,7 @@ public partial class CXPostApp
                                     var nextMsg = GetSelectedMessage();
                                     if (nextMsg != null) ShowMessagePreview(nextMsg);
                                     else ClearReadingPane();
-                                    UpdateHelpBar();
+                                    UpdateBottomBar();
                                     UpdateToolbar();
                                 });
                                 try
@@ -423,7 +423,7 @@ public partial class CXPostApp
                         var nextMsg = GetSelectedMessage();
                         if (nextMsg != null) ShowMessagePreview(nextMsg);
                         else ClearReadingPane();
-                        UpdateHelpBar();
+                        UpdateBottomBar();
                         UpdateToolbar();
                     }
                 }
@@ -582,7 +582,7 @@ public partial class CXPostApp
                                 ClearReadingPane();
                                 _messageListCoordinator.RefreshMessageList();
                                 UpdatePreviewHeader();
-                                UpdateHelpBar();
+                                UpdateBottomBar();
                                 UpdateToolbar();
                                 ShowSuccess($"Moved {count} message{(count != 1 ? "s" : "")} to {dest.DisplayName}");
                             });
@@ -620,7 +620,7 @@ public partial class CXPostApp
                                     _messageListCoordinator.RefreshMessageList();
                                     ClearReadingPane();
                                     UpdatePreviewHeader();
-                                    UpdateHelpBar();
+                                    UpdateBottomBar();
                                     UpdateToolbar();
                                     ShowSuccess($"Moved to {dest.DisplayName}");
                                 });

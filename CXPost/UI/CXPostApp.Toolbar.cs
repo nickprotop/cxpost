@@ -66,71 +66,81 @@ public partial class CXPostApp
         }
     }
 
-    private void UpdateHelpBar()
+    private void UpdateBottomBar()
     {
-        _helpBar.Clear();
+        if (_bottomBar == null) return;
 
-        var hasMessage = GetSelectedMessage() != null;
-        var checkedCount = GetCheckedCount();
-
-        if (checkedCount > 0)
+        _bottomBar.BatchUpdate(() =>
         {
-            // Bulk mode — actions apply to checked messages
-            _helpBar.Add("Space", "Toggle");
-            _helpBar.Add("Del", $"Delete ({checkedCount})", () => SimulateKey(ConsoleKey.Delete));
-            _helpBar.Add("Ctrl+U", $"Read ({checkedCount})", () => SimulateKey(ConsoleKey.U, ctrl: true));
-            _helpBar.Add("Ctrl+D", $"Flag ({checkedCount})", () => SimulateKey(ConsoleKey.D, ctrl: true));
-            _helpBar.Add("Ctrl+M", $"Move ({checkedCount})", () => SimulateKey(ConsoleKey.M, ctrl: true));
-            _helpBar.Add("Ctrl+F", $"Forward ({checkedCount})", () => SimulateKey(ConsoleKey.F, ctrl: true));
-            _helpBar.Add("Esc", "Clear", () => ClearSelection());
-        }
-        else
-        {
-            // Normal mode
-            _helpBar.Add("\u2191\u2193", "Navigate");
-            _helpBar.Add("Ctrl+N", "Compose", () => SimulateKey(ConsoleKey.N, ctrl: true));
+            _bottomBar.ClearAll();
 
-            if (hasMessage)
+            var hasMessage = GetSelectedMessage() != null;
+            var checkedCount = GetCheckedCount();
+            var isDashboard = _dashboardPanel?.Visible == true;
+
+            // ── Left side: contextual hints ──────────────────────────────────
+            if (_layoutModeManager.IsReadMode)
             {
-                _helpBar.Add("Ctrl+R", "Reply", () => SimulateKey(ConsoleKey.R, ctrl: true));
-                _helpBar.Add("Ctrl+F", "Forward", () => SimulateKey(ConsoleKey.F, ctrl: true));
-                var msg = GetSelectedMessage();
-                var readLabel = msg?.IsRead == true ? "Unread" : "Read";
-                var flagLabel = msg?.IsFlagged == true ? "Unflag" : "Flag";
-                _helpBar.Add("Ctrl+U", readLabel, () => SimulateKey(ConsoleKey.U, ctrl: true));
-                _helpBar.Add("Ctrl+D", flagLabel, () => SimulateKey(ConsoleKey.D, ctrl: true));
-                _helpBar.Add("Del", "Delete", () => SimulateKey(ConsoleKey.Delete));
-                _helpBar.Add("Ctrl+M", "Move", () => SimulateKey(ConsoleKey.M, ctrl: true));
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Esc[/][grey70]:Back[/]");
+                _bottomBar.AddLeftSeparator();
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Ctrl+B[/][grey70]:Toggle list[/]");
+                _bottomBar.AddLeftSeparator();
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u2191\u2193[/][grey70]:Navigate[/]");
+            }
+            else if (checkedCount > 0)
+            {
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Del[/][grey70]:Delete {checkedCount}[/]",
+                    () => SimulateKey(ConsoleKey.Delete));
+                _bottomBar.AddLeftSeparator();
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Ctrl+M[/][grey70]:Move[/]",
+                    () => SimulateKey(ConsoleKey.M, ctrl: true));
+                _bottomBar.AddLeftSeparator();
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Esc[/][grey70]:Clear[/]",
+                    () => ClearSelection());
+            }
+            else if (isDashboard && !hasMessage)
+            {
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Enter[/][grey70]:Open folder[/]");
+                _bottomBar.AddLeftSeparator();
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]F5[/][grey70]:Sync all[/]",
+                    () => SimulateKey(ConsoleKey.F5));
+            }
+            else
+            {
+                if (hasMessage)
+                {
+                    _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Enter[/][grey70]:Read view[/]",
+                        () => EnterReadMode());
+                    _bottomBar.AddLeftSeparator();
+                    _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]Space[/][grey70]:Check[/]");
+                    _bottomBar.AddLeftSeparator();
+                }
+                _bottomBar.AddLeftText($"[{ColorScheme.PrimaryMarkup}]\u2191\u2193[/][grey70]:Navigate[/]");
             }
 
-            _helpBar.Add("Ctrl+S", "Search", () => SimulateKey(ConsoleKey.S, ctrl: true));
-            _helpBar.Add("F5", "Sync All", () => SimulateKey(ConsoleKey.F5));
-            if (!_isSearchActive && _dashboardPanel?.Visible != true)
-                _helpBar.Add("Shift+F5", "Sync Folder", () => SimulateKey(ConsoleKey.F5, shift: true));
-
-            _helpBar.Add("F2", _layoutModeManager.IsFolderTreeHidden ? "Show Folders" : "Hide Folders",
+            // ── Right side: view toggles ─────────────────────────────────────
+            var foldersColor = _layoutModeManager.IsFolderTreeHidden ? ColorScheme.MutedMarkup : ColorScheme.PrimaryMarkup;
+            _bottomBar.AddRightText($"[{foldersColor}]Folders[/] [{ColorScheme.MutedMarkup}]F2[/]",
                 () => ToggleFolderTree());
 
             if (!_layoutModeManager.IsReadMode)
             {
-                _helpBar.Add("F3", _layoutModeManager.IsPreviewHidden ? "Show Preview" : "Hide Preview",
+                _bottomBar.AddRightSeparator();
+                var previewColor = _layoutModeManager.IsPreviewHidden ? ColorScheme.MutedMarkup : ColorScheme.PrimaryMarkup;
+                _bottomBar.AddRightText($"[{previewColor}]Preview[/] [{ColorScheme.MutedMarkup}]F3[/]",
                     () => TogglePreview());
             }
 
-            if (_layoutModeManager.IsReadMode)
-            {
-                _helpBar.Add("F4", "Exit Read", () => ExitReadMode());
-                _helpBar.Add("Ctrl+B", "Toggle List", () => ToggleReadStrip());
-            }
-            else if (GetSelectedMessage() != null)
-            {
-                _helpBar.Add("F4", "Read View", () => EnterReadMode());
-            }
+            _bottomBar.AddRightSeparator();
+            var readColor = _layoutModeManager.IsReadMode ? ColorScheme.PrimaryMarkup : ColorScheme.MutedMarkup;
+            _bottomBar.AddRightText($"[{readColor}]Read[/] [{ColorScheme.MutedMarkup}]F4[/]",
+                () => { if (_layoutModeManager.IsReadMode) ExitReadMode(); else EnterReadMode(); });
 
-            _helpBar.Add("Ctrl+,", "Settings", () => SimulateKey(ConsoleKey.OemComma, ctrl: true));
-        }
-
-        _statusBar.UpdateHelpBar(_helpBar.Render());
+            _bottomBar.AddRightSeparator();
+            var layoutName = _currentLayout == "classic" ? "Wide" : "Classic";
+            _bottomBar.AddRightText($"[{ColorScheme.MutedMarkup}]{layoutName}[/] [{ColorScheme.MutedMarkup}]F8[/]",
+                () => SimulateKey(ConsoleKey.F8));
+        });
     }
 
     private void AddToolbarButton(string text, Action onClick)

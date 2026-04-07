@@ -13,8 +13,6 @@ public class StatusBarBuilder
 {
     private readonly StatusBarControl _topLeft;
     private readonly MarkupControl _topRight;
-    private readonly MarkupControl _bottomLeft;
-
     public StatusBarBuilder()
     {
         _topLeft = Controls.StatusBar()
@@ -24,12 +22,10 @@ public class StatusBarBuilder
         _topLeft.BackgroundColor = Color.Transparent;
 
         _topRight = Controls.Markup("[grey50]Disconnected[/]").Build();
-        _bottomLeft = Controls.Markup("[grey50]Ctrl+N[/]: Compose  [grey50]Ctrl+R[/]: Reply  [grey50]Ctrl+S[/]: Search  [grey50]Del[/]: Delete  [grey50]Ctrl+M[/]: Move").Build();
     }
 
     public StatusBarControl TopLeftControl => _topLeft;
     public MarkupControl TopRightControl => _topRight;
-    public MarkupControl BottomLeftControl => _bottomLeft;
 
     public void UpdateBreadcrumb(string accountName, string folderName,
         Action? onAppClick = null, Action? onAccountClick = null)
@@ -54,8 +50,4 @@ public class StatusBarBuilder
         _topRight.SetContent([status]);
     }
 
-    public void UpdateHelpBar(string context)
-    {
-        _bottomLeft.SetContent([context]);
-    }
 }

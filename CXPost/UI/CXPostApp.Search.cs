@@ -40,7 +40,7 @@ public partial class CXPostApp
         }
 
         ClearReadingPane();
-        UpdateHelpBar();
+        UpdateBottomBar();
         UpdateToolbar();
     }
 

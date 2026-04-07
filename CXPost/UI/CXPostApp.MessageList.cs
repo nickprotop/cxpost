@@ -186,7 +186,7 @@ public partial class CXPostApp
                 ClearReadingPane();
                 UpdatePreviewHeader();
             }
-            UpdateHelpBar();
+            UpdateBottomBar();
             UpdateToolbar();
         }
     }
@@ -215,7 +215,7 @@ public partial class CXPostApp
         // Always show preview for cursor message (checkboxes managed by MultiSelectionChanged event)
         ShowMessagePreview(msg);
         UpdatePreviewHeader(msg);
-        UpdateHelpBar();
+        UpdateBottomBar();
         UpdateToolbar();
         RetainMessageListFocus();
 
@@ -316,7 +316,7 @@ public partial class CXPostApp
     {
         _messageTable?.ClearSelection();
         UpdateToolbar();
-        UpdateHelpBar();
+        UpdateBottomBar();
         // Restore normal header
         var msg = GetSelectedMessage();
         if (msg != null)
