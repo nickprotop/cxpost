@@ -434,25 +434,22 @@ public partial class CXPostApp : IDisposable
                 _mainGrid.AddColumn(folderColumn);
             }
 
-            // Message strip (narrow)
+            // Message strip (narrow) — simple header, no sync/starred buttons
             var stripWidth = _layoutModeManager.IsStripVisible ? LayoutModeManager.StripWidth : 0;
             var stripColumn = new ColumnContainer(_mainGrid) { Width = stripWidth };
             if (!_layoutModeManager.IsStripVisible)
                 stripColumn.Visible = false;
-            stripColumn.AddContent(_rightPanelHeader!);
             stripColumn.AddContent(_readModeList!);
             if (!_layoutModeManager.IsFolderTreeHidden)
                 _mainGrid.AddColumnWithSplitter(stripColumn);
             else
                 _mainGrid.AddColumn(stripColumn);
 
-            // Reading pane (fills) — no splitter, strip width is fixed
+            // Reading pane (fills) — no draggable splitter
             _previewColumn = new ColumnContainer(_mainGrid);
             _previewColumn.AddContent(_previewPanelHeader!);
             _previewColumn.AddContent(_readingPane!);
-            _mainGrid.AddColumnWithSplitter(_previewColumn);
-            // Note: still using AddColumnWithSplitter for the thin visual separator line,
-            // but the splitter between strip and reader is non-draggable at strip's fixed width
+            _mainGrid.AddColumn(_previewColumn);
 
             // Hide horizontal splitter (not used in read mode)
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
