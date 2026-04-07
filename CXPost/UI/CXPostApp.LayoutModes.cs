@@ -145,6 +145,9 @@ public partial class CXPostApp
             _layoutModeManager.SavePreviewColumnWidth(columns[2].Width ?? 0);
 
         _layoutModeManager.EnterReadMode();
+        // Ensure reading pane is visible — it may have been hidden by preview toggle
+        if (_readingPane != null) _readingPane.Visible = true;
+        if (_previewPanelHeader != null) _previewPanelHeader.Visible = true;
         PopulateReadModeStrip();
         RebuildMainGrid();
         TriggerReadingPaneFadeIn();
