@@ -9,10 +9,15 @@ public class ReadingPaneCompositor
 {
     private readonly ScrollablePanelControl _readingPane;
 
-    // Overlay parameters
-    private static readonly Color HeaderTintColor = new(100, 130, 170);
-    private const float HeaderTintIntensity = 0.07f;
-    private const float HeaderFgRatio = 0.3f;
+    // Purple/indigo tint
+    private static readonly Color HeaderTintColor = new(80, 50, 140);
+    private const float HeaderTintIntensity = 0.25f;
+    private const float HeaderFgRatio = 0.1f;
+
+    // Teal-green tint
+    private static readonly Color AttachmentTintColor = new(30, 140, 100);
+    private const float AttachmentTintIntensity = 0.20f;
+    private const float AttachmentFgRatio = 0.1f;
 
     private static readonly Color QuoteDimColor = new(80, 80, 100);
     private const float QuoteDimIntensity = 0.12f;
@@ -28,38 +33,68 @@ public class ReadingPaneCompositor
 
     public void OnPaint(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)
     {
-        if (!_readingPane.Visible || _readingPane.ActualWidth <= 0 || _readingPane.ActualHeight <= 0)
+        if (!_readingPane.Visible || _readingPane.ActualWidth <= 2 || _readingPane.ActualHeight <= 0)
             return;
 
-        var paneBounds = new LayoutRect(
-            _readingPane.ActualX, _readingPane.ActualY,
-            _readingPane.ActualWidth, _readingPane.ActualHeight);
+        int paneX = _readingPane.ActualX;
+        int paneY = _readingPane.ActualY;
+        int paneW = _readingPane.ActualWidth;
+        int paneH = _readingPane.ActualHeight;
+        int scrollOffset = _readingPane.VerticalScrollOffset;
 
-        // Scan children for tagged controls and apply overlays directly
-        foreach (var child in _readingPane.GetChildren())
+        var paneBounds = new LayoutRect(paneX, paneY, paneW, paneH);
+
+        IReadOnlyList<IWindowControl> children;
+        try { children = _readingPane.GetChildren(); }
+        catch { return; }
+
+        // Compute positions from content order + scroll offset
+        // This avoids relying on stale ActualY from off-screen controls
+        int contentY = -scrollOffset;
+
+        foreach (var child in children)
         {
-            var tag = (child as BaseControl)?.Tag as string;
-            if (tag == null) continue;
+            if (!child.Visible)
+                continue;
 
-            var rect = new LayoutRect(child.ActualX, child.ActualY, child.ActualWidth, child.ActualHeight);
-            if (rect.Width <= 0 || rect.Height <= 0) continue;
+            int childHeight = child.ActualHeight > 0 ? child.ActualHeight : 1;
+            int screenY = paneY + contentY;
 
-            var clipped = Intersect(rect, paneBounds);
-            if (clipped.Width <= 0 || clipped.Height <= 0) continue;
-
-            switch (tag)
+            // Skip if entirely above or below viewport
+            if (screenY + childHeight <= paneY || screenY >= paneY + paneH)
             {
-                case "header":
-                    ColorBlendHelper.ApplyColorOverlay(buffer, HeaderTintColor, HeaderTintIntensity, HeaderFgRatio, clipped);
-                    break;
-                case "quote":
-                    ColorBlendHelper.ApplyColorOverlay(buffer, QuoteDimColor, QuoteDimIntensity, QuoteFgRatio, clipped);
-                    break;
-                case "signature":
-                    var bgColor = buffer.GetCell(clipped.X, clipped.Y).Background;
-                    ColorBlendHelper.ApplyColorOverlay(buffer, bgColor, SignatureDimIntensity, SignatureFgRatio, clipped);
-                    break;
+                contentY += childHeight;
+                continue;
             }
+
+            var tag = (child as BaseControl)?.Tag as string;
+            if (tag != null)
+            {
+                var rect = new LayoutRect(paneX, screenY, paneW, childHeight);
+                var clipped = Intersect(rect, paneBounds);
+
+                if (clipped.Width > 0 && clipped.Height > 0)
+                {
+                    switch (tag)
+                    {
+                        case "header":
+                            ColorBlendHelper.ApplyColorOverlay(buffer, HeaderTintColor, HeaderTintIntensity, HeaderFgRatio, clipped);
+                            break;
+                        case "attachments":
+                            ColorBlendHelper.ApplyColorOverlay(buffer, AttachmentTintColor, AttachmentTintIntensity, AttachmentFgRatio, clipped);
+                            break;
+                        case "quote":
+                            ColorBlendHelper.ApplyColorOverlay(buffer, QuoteDimColor, QuoteDimIntensity, QuoteFgRatio, clipped);
+                            break;
+                        case "signature":
+                            var bgColor = buffer.GetCell(clipped.X, clipped.Y).Background;
+                            ColorBlendHelper.ApplyColorOverlay(buffer, bgColor, SignatureDimIntensity, SignatureFgRatio, clipped);
+                            break;
+                    }
+                }
+            }
+
+            contentY += childHeight;
         }
     }
 

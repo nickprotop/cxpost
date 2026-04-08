@@ -47,11 +47,7 @@ public partial class CXPostApp
         headerControl.SetContent(headerLines);
         _readingPane.AddControl(headerControl);
 
-        // Rule always below header
-        var headerRule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
-        _readingPane.AddControl(headerRule);
-
-        // Attachment section
+        // Attachment section (directly after header, no gap)
         if (msg.Attachments != null && msg.Attachments.Count > 0)
             AddAttachmentControls(msg);
         else if (msg.HasAttachments && msg.Attachments == null)
@@ -60,6 +56,9 @@ public partial class CXPostApp
                 $"  [{ColorScheme.MutedMarkup}]\U0001f4ce Loading attachments...[/]").Build();
             _readingPane.AddControl(loadingAtt);
         }
+
+        // Empty line below header/attachments before body
+        _readingPane.AddControl(Controls.Markup("").Build());
 
         // Body
         if (msg.BodyFetched && msg.BodyPlain != null)
@@ -264,9 +263,16 @@ public partial class CXPostApp
     {
         if (_readingPane == null || msg.Attachments == null) return;
 
-        _readingPane.AddControl(Controls.Markup(
-            $"  [{ColorScheme.MutedMarkup}]\U0001f4ce {msg.Attachments.Count} attachment{(msg.Attachments.Count != 1 ? "s" : "")}[/]")
-            .Build());
+        var attHeader = Controls.Markup(
+            $"[{ColorScheme.MutedMarkup}]\U0001f4ce {msg.Attachments.Count} attachment{(msg.Attachments.Count != 1 ? "s" : "")}[/]")
+            .Build();
+        attHeader.Tag = "attachments";
+        attHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _readingPane.AddControl(attHeader);
+
+        var attSpacer = Controls.Markup("").Build();
+        attSpacer.Tag = "attachments";
+        _readingPane.AddControl(attSpacer);
 
         foreach (var att in msg.Attachments)
         {
@@ -276,37 +282,42 @@ public partial class CXPostApp
             var icon = GetFileTypeIcon(fileName);
 
             var infoLabel = Controls.Markup(
-                $"{icon}  {MarkupParser.Escape(fileName)}  [grey50]{sizeStr}[/]").Build();
+                $" {icon}  {MarkupParser.Escape(fileName)}  [grey50]{sizeStr}[/]").Build();
             infoLabel.HorizontalAlignment = HorizontalAlignment.Stretch;
 
             var actions = ToolbarControl.Create()
-                .AddButton("Save", (_, _) => SaveAttachmentQuick(msg, idx, fileName))
-                .AddButton("Save As", (_, _) => SaveAttachmentAs(msg, idx))
+                .AddButton($"[{idx + 1}] Save", (_, _) => SaveAttachmentQuick(msg, idx, fileName))
+                .AddButton($"[^{idx + 1}] Save As", (_, _) => SaveAttachmentAs(msg, idx))
+                .WithSpacing(1)
                 .Build();
             actions.BackgroundColor = Color.Transparent;
 
             var row = Controls.HorizontalGrid()
-                .Column(col => col.Add(infoLabel))
-                .Column(col => col.Add(actions))
-                .WithMargin(4, 0, 2, 0)
+                .Column(col => col.Flex(1).Add(infoLabel))
+                .Column(col => col.Flex(0).Add(actions))
+                .WithAlignment(HorizontalAlignment.Stretch)
                 .Build();
+            row.Tag = "attachments";
             row.HorizontalAlignment = HorizontalAlignment.Stretch;
             _readingPane.AddControl(row);
         }
 
         if (msg.Attachments.Count > 1)
         {
+            // Dimmed ruler to separate bulk actions
+            var attSep = Controls.RuleBuilder().WithColor(Color.Grey15).Build();
+            attSep.Tag = "attachments";
+            _readingPane.AddControl(attSep);
+
             var bulkActions = ToolbarControl.Create()
-                .AddButton("Save All", (_, _) => SaveAllAttachments(msg))
-                .AddButton("Save All to...", (_, _) => SaveAllAttachmentsAs(msg))
-                .WithMargin(4, 0, 2, 0)
+                .AddButton("[A] Save All", (_, _) => SaveAllAttachments(msg))
+                .AddButton("[^A] Save All to...", (_, _) => SaveAllAttachmentsAs(msg))
+                .WithSpacing(1)
                 .Build();
             bulkActions.BackgroundColor = Color.Transparent;
+            bulkActions.Tag = "attachments";
             _readingPane.AddControl(bulkActions);
         }
-
-        var attRule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
-        _readingPane.AddControl(attRule);
     }
 
     private void SaveAttachmentQuick(MailMessage msg, int index, string fileName)
