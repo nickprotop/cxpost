@@ -24,7 +24,7 @@ public partial class CXPostApp
         if (_readingPane == null) return;
 
         _readingPane.ClearContents();
-        _readingPaneCompositor?.Invalidate();
+
 
         // Header
         var headerLines = new List<string>
@@ -61,15 +61,8 @@ public partial class CXPostApp
         if (msg.BodyFetched && msg.BodyPlain != null)
         {
             // Separator between header/attachments and body
-            var sepLines = new List<string>
-            {
-                $"  [grey23]{"".PadRight(60, '\u2500')}[/]",
-                ""
-            };
-            var sepControl = Controls.Markup().Build();
-            sepControl.HorizontalAlignment = HorizontalAlignment.Stretch;
-            sepControl.SetContent(sepLines);
-            _readingPane.AddControl(sepControl);
+            var sepRule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
+            _readingPane.AddControl(sepRule);
 
             var body = msg.BodyPlain;
 
@@ -91,7 +84,7 @@ public partial class CXPostApp
             _readingPane.AddControl(loading);
         }
 
-        _readingPaneCompositor?.Invalidate();
+
 
         if (!_isSearchActive && GetCheckedCount() == 0 && (_readingPane.CanScrollDown || _readingPane.CanScrollUp))
             SetRightPanelHeader("[grey70]Messages[/] [grey50](\u2191\u2193 to scroll)[/]", showSyncAction: true, showFlaggedFilter: true);

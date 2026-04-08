@@ -355,7 +355,6 @@ public partial class CXPostApp : IDisposable
         _mainWindow.PostBufferPaint += (buffer, dirtyRegion, clipRect) =>
             _readingPaneCompositor?.OnPaint(buffer, dirtyRegion, clipRect);
 
-        _mainWindow.OnResize += (_, _) => _readingPaneCompositor?.Invalidate();
 
         // Confirm before quit
         _mainWindow.OnClosing += (_, args) =>
