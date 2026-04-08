@@ -48,4 +48,10 @@ public static class ColorScheme
     public const string QuoteBorderMarkup = "rgb(74,122,138)";
     public const string QuoteTextMarkup = "grey50";
     public const string SignatureMarkup = "grey35";
+
+    // Reading pane section backgrounds (semi-transparent, alpha-blended)
+    public static readonly Color HeaderSectionBg = new(40, 25, 70, 160);
+    public static readonly Color AttachmentSectionBg = new(15, 50, 40, 140);
+    public static readonly Color QuoteSectionBg = new(30, 30, 50, 140);
+    public static readonly Color SignatureSectionBg = new(10, 10, 15, 140);
 }

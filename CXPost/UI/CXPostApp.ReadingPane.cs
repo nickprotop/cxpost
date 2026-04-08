@@ -43,7 +43,7 @@ public partial class CXPostApp
         headerLines.Add("");
         var headerControl = Controls.Markup().Build();
         headerControl.HorizontalAlignment = HorizontalAlignment.Stretch;
-        headerControl.Tag = "header";
+        headerControl.BackgroundColor = ColorScheme.HeaderSectionBg;
         headerControl.SetContent(headerLines);
         _readingPane.AddControl(headerControl);
 
@@ -69,12 +69,12 @@ public partial class CXPostApp
             if (MessageFormatter.IsHtml(body))
             {
                 var markup = Components.HtmlConverter.ToMarkup(body);
-                var bodyLines = markup.Split('\n').Select(l => $"  {l}").ToList();
+                var bodyLines = markup.Split('\n').ToList();
                 AddHtmlSegmentedControls(bodyLines);
             }
             else
             {
-                var bodyLines = body.Split('\n').Select(l => $"  {MarkupParser.Escape(l)}").ToList();
+                var bodyLines = body.Split('\n').Select(l => MarkupParser.Escape(l)).ToList();
                 AddPlainTextSegmentedControls(bodyLines);
             }
         }
@@ -109,24 +109,25 @@ public partial class CXPostApp
             var control = Controls.Markup().Build();
             control.HorizontalAlignment = HorizontalAlignment.Stretch;
 
+            control.Margin = new Margin(2, 0, 2, 0);
+
             switch (segment.Type)
             {
                 case Components.EmailSegmentType.Quote:
-                    control.Tag = "quote";
+                    control.BackgroundColor = ColorScheme.QuoteSectionBg;
                     var quoteLines = segment.Lines.Select(l =>
                     {
                         var trimmed = l.TrimStart();
-                        // Strip "> " prefix if present, then re-format
                         var content = trimmed.StartsWith("> ") ? trimmed[2..] : trimmed;
-                        return $"  [{ColorScheme.QuoteBorderMarkup}]\u258e[/] [{ColorScheme.QuoteTextMarkup}]{content}[/]";
+                        return $"[{ColorScheme.QuoteBorderMarkup}]\u258e[/] [{ColorScheme.QuoteTextMarkup}]{content}[/]";
                     }).ToList();
                     control.SetContent(quoteLines);
                     break;
 
                 case Components.EmailSegmentType.Signature:
-                    control.Tag = "signature";
+                    control.BackgroundColor = ColorScheme.SignatureSectionBg;
                     var sigLines = segment.Lines.Select(l =>
-                        $"  [{ColorScheme.SignatureMarkup}]{l.TrimStart()}[/]").ToList();
+                        $"[{ColorScheme.SignatureMarkup}]{l.TrimStart()}[/]").ToList();
                     control.SetContent(sigLines);
                     break;
 
@@ -185,20 +186,21 @@ public partial class CXPostApp
         {
             var control = Controls.Markup().Build();
             control.HorizontalAlignment = HorizontalAlignment.Stretch;
+            control.Margin = new Margin(2, 0, 2, 0);
 
             switch (segment.Type)
             {
                 case Components.EmailSegmentType.Quote:
-                    control.Tag = "quote";
+                    control.BackgroundColor = ColorScheme.QuoteSectionBg;
                     var quoteLines = segment.Lines.Select(l =>
-                        $"  [{ColorScheme.QuoteBorderMarkup}]\u258e[/] [{ColorScheme.QuoteTextMarkup}]{l.TrimStart()}[/]").ToList();
+                        $"[{ColorScheme.QuoteBorderMarkup}]\u258e[/] [{ColorScheme.QuoteTextMarkup}]{l.TrimStart()}[/]").ToList();
                     control.SetContent(quoteLines);
                     break;
 
                 case Components.EmailSegmentType.Signature:
-                    control.Tag = "signature";
+                    control.BackgroundColor = ColorScheme.SignatureSectionBg;
                     var sigLines = segment.Lines.Select(l =>
-                        $"  [{ColorScheme.SignatureMarkup}]{l.TrimStart()}[/]").ToList();
+                        $"[{ColorScheme.SignatureMarkup}]{l.TrimStart()}[/]").ToList();
                     control.SetContent(sigLines);
                     break;
 
@@ -265,20 +267,20 @@ public partial class CXPostApp
 
         // Empty line above attachment header
         var attTopSpacer = Controls.Markup("").Build();
-        attTopSpacer.Tag = "attachments";
+        attTopSpacer.BackgroundColor = ColorScheme.AttachmentSectionBg;
         _readingPane.AddControl(attTopSpacer);
 
         // Attachment header — 2-space indent like header fields
         var attHeader = Controls.Markup(
             $"  [{ColorScheme.MutedMarkup}]\U0001f4ce {msg.Attachments.Count} attachment{(msg.Attachments.Count != 1 ? "s" : "")}[/]")
             .Build();
-        attHeader.Tag = "attachments";
+        attHeader.BackgroundColor = ColorScheme.AttachmentSectionBg;
         attHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
         _readingPane.AddControl(attHeader);
 
         // Empty line after title
         var attSpacer = Controls.Markup("").Build();
-        attSpacer.Tag = "attachments";
+        attSpacer.BackgroundColor = ColorScheme.AttachmentSectionBg;
         _readingPane.AddControl(attSpacer);
 
         // File rows — 2-space indent
@@ -316,7 +318,7 @@ public partial class CXPostApp
                 .Column(col => col.Width(actionsW).Add(actions))
                 .WithAlignment(HorizontalAlignment.Stretch)
                 .Build();
-            row.Tag = "attachments";
+            row.BackgroundColor = ColorScheme.AttachmentSectionBg;
             row.HorizontalAlignment = HorizontalAlignment.Stretch;
             _readingPane.AddControl(row);
         }
@@ -325,7 +327,7 @@ public partial class CXPostApp
         {
             // Empty line before bulk actions
             var bulkSpacer = Controls.Markup("").Build();
-            bulkSpacer.Tag = "attachments";
+            bulkSpacer.BackgroundColor = ColorScheme.AttachmentSectionBg;
             _readingPane.AddControl(bulkSpacer);
 
             var bulkActions = ToolbarControl.Create()
@@ -334,14 +336,13 @@ public partial class CXPostApp
                 .WithSpacing(1)
                 .WithMargin(2, 0, 0, 0)
                 .Build();
-            bulkActions.BackgroundColor = Color.Transparent;
-            bulkActions.Tag = "attachments";
+            bulkActions.BackgroundColor = ColorScheme.AttachmentSectionBg;
             _readingPane.AddControl(bulkActions);
         }
 
         // Empty line at bottom of attachments section
         var attBottom = Controls.Markup("").Build();
-        attBottom.Tag = "attachments";
+        attBottom.BackgroundColor = ColorScheme.AttachmentSectionBg;
         _readingPane.AddControl(attBottom);
     }
 

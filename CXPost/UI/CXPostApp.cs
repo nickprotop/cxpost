@@ -47,7 +47,7 @@ public partial class CXPostApp : IDisposable
     private TreeControl? _folderTree;
     private TableControl? _messageTable;
     private ScrollablePanelControl? _readingPane;
-    private ReadingPaneCompositor? _readingPaneCompositor;
+
     private MarkupControl? _readingContent;
     private HorizontalGridControl? _mainGrid;
     private ScrollablePanelControl? _dashboardPanel;
@@ -198,8 +198,6 @@ public partial class CXPostApp : IDisposable
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Build();
-
-        _readingPaneCompositor = new ReadingPaneCompositor(_readingPane);
 
         // Splitter between message list and reading pane
         _listReadingSplitter = Controls.HorizontalSplitter()
@@ -359,9 +357,6 @@ public partial class CXPostApp : IDisposable
             .WithAsyncWindowThread(MainLoopAsync)
             .OnKeyPressed(OnKeyPressed)
             .Build();
-
-        _mainWindow.PostBufferPaint += (buffer, dirtyRegion, clipRect) =>
-            _readingPaneCompositor?.OnPaint(buffer, dirtyRegion, clipRect);
 
 
         // Confirm before quit
