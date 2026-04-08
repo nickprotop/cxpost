@@ -773,6 +773,7 @@ public partial class CXPostApp
         else if (e.KeyInfo.Key == KeyBindings.SwitchLayout)
         {
             var isDashboard = _dashboardPanel?.Visible == true;
+            SaveCurrentGridWidths();
             _currentLayout = _currentLayout == "classic" ? "wide" : "classic";
             // Preserve "last" preference — only update LastLayout, not Layout
             _config.LastLayout = _currentLayout;

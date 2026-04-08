@@ -124,6 +124,16 @@ public partial class CXPostApp : IDisposable
         _currentLayout = _config.Layout == "last"
             ? (_config.LastLayout is "classic" or "wide" ? _config.LastLayout : "classic")
             : (_config.Layout is "classic" or "wide" ? _config.Layout : "classic");
+
+        // Restore layout widths from config
+        if (_config.FolderColumnWidth > 0)
+            _layoutModeManager.SaveFolderWidth(_config.FolderColumnWidth);
+        if (_config.MessageColumnWidth > 0)
+            _layoutModeManager.SaveMessageColumnWidth(_config.MessageColumnWidth);
+        if (_config.PreviewColumnWidth > 0)
+            _layoutModeManager.SavePreviewColumnWidth(_config.PreviewColumnWidth);
+        if (_config.PreviewHidden)
+            _layoutModeManager.TogglePreview();
     }
 
     public void Run()
@@ -499,7 +509,10 @@ public partial class CXPostApp : IDisposable
         if (_currentLayout == "wide")
         {
             // Wide layout: Folders | Messages | Preview (3 columns)
+            var savedMessageWidth = _layoutModeManager.GetSavedMessageColumnWidth();
             var messageColumn = new ColumnContainer(_mainGrid);
+            if (savedMessageWidth > 0)
+                messageColumn.Width = savedMessageWidth;
             messageColumn.AddContent(_rightPanelHeader!);
             messageColumn.AddContent(_messageTable!);
             messageColumn.AddContent(_dashboardPanel!);
@@ -604,6 +617,8 @@ public partial class CXPostApp : IDisposable
 
     public void Dispose()
     {
+        SaveCurrentGridWidths();
+        PersistLayoutWidths();
         StopAllSyncLoops();
         _bodyFetchDebounce?.Dispose();
         try { _bodyFetchCts?.Cancel(); } catch (ObjectDisposedException) { }

@@ -234,4 +234,40 @@ public partial class CXPostApp
         if (selectedIdx >= 0 && selectedIdx < _readModeList.Items.Count)
             _readModeList.SelectedIndex = selectedIdx;
     }
+
+    /// <summary>
+    /// Saves current grid column widths to LayoutModeManager and config.
+    /// Call before any operation that rebuilds the grid.
+    /// </summary>
+    private void SaveCurrentGridWidths()
+    {
+        if (_mainGrid == null || _layoutModeManager.IsReadMode) return;
+
+        var columns = _mainGrid.Columns;
+        if (columns.Count == 0) return;
+
+        // Column[0] is always the folder column in normal mode
+        if (!_layoutModeManager.IsFolderTreeHidden)
+            _layoutModeManager.SaveFolderWidth(columns[0].Width ?? 28);
+
+        if (_currentLayout == "wide")
+        {
+            if (columns.Count > 1)
+                _layoutModeManager.SaveMessageColumnWidth(columns[1].Width ?? 0);
+            if (columns.Count > 2)
+                _layoutModeManager.SavePreviewColumnWidth(columns[2].Width ?? 0);
+        }
+    }
+
+    /// <summary>
+    /// Persists layout widths to config for next session.
+    /// </summary>
+    private void PersistLayoutWidths()
+    {
+        _config.FolderColumnWidth = _layoutModeManager.GetSavedFolderWidth();
+        _config.MessageColumnWidth = _layoutModeManager.GetSavedMessageColumnWidth();
+        _config.PreviewColumnWidth = _layoutModeManager.GetSavedPreviewColumnWidth();
+        _config.PreviewHidden = _layoutModeManager.IsPreviewHidden;
+        _configService.Save(_config);
+    }
 }

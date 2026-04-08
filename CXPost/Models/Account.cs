@@ -56,4 +56,10 @@ public class CXPostConfig
     public bool ConfirmQuit { get; set; } = false;
     public string LastLayout { get; set; } = "classic";
     public string? LastFolderPath { get; set; }
+
+    // Layout widths (persisted across sessions)
+    public int FolderColumnWidth { get; set; } = 28;
+    public int MessageColumnWidth { get; set; }
+    public int PreviewColumnWidth { get; set; }
+    public bool PreviewHidden { get; set; }
 }
