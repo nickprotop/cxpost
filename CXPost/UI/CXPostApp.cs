@@ -251,8 +251,8 @@ public partial class CXPostApp : IDisposable
 
         _previewPanelHeader = Controls.StatusBar()
             .AddLeftText("[grey70]Preview[/]")
-            .WithMargin(1, 0, 0, 0)
             .Build();
+        _previewPanelHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
         _previewPanelHeader.BackgroundColor = ColorScheme.PanelHeaderBackground;
 
         // Build main grid (layout depends on _currentLayout)
@@ -434,7 +434,8 @@ public partial class CXPostApp : IDisposable
         if (_mainGrid == null) return;
 
         var columns = _mainGrid.Columns;
-        var folderWidth = columns.Count > 0 ? columns[0].Width ?? 28 : 28;
+        // Always use saved folder width — the current grid layout may not have folders as column[0]
+        var folderWidth = _layoutModeManager.GetSavedFolderWidth();
 
         _mainGrid.ClearColumns();
 
