@@ -47,6 +47,10 @@ public partial class CXPostApp
         headerControl.SetContent(headerLines);
         _readingPane.AddControl(headerControl);
 
+        // Rule always below header
+        var headerRule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
+        _readingPane.AddControl(headerRule);
+
         // Attachment section
         if (msg.Attachments != null && msg.Attachments.Count > 0)
             AddAttachmentControls(msg);
@@ -60,9 +64,6 @@ public partial class CXPostApp
         // Body
         if (msg.BodyFetched && msg.BodyPlain != null)
         {
-            // Separator between header/attachments and body
-            var sepRule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
-            _readingPane.AddControl(sepRule);
 
             var body = msg.BodyPlain;
 
@@ -264,11 +265,8 @@ public partial class CXPostApp
         if (_readingPane == null || msg.Attachments == null) return;
 
         _readingPane.AddControl(Controls.Markup(
-            $"  [{ColorScheme.PrimaryMarkup}]\U0001f4ce Attachments ({msg.Attachments.Count})[/]")
+            $"  [{ColorScheme.MutedMarkup}]\U0001f4ce {msg.Attachments.Count} attachment{(msg.Attachments.Count != 1 ? "s" : "")}[/]")
             .Build());
-
-        var rule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
-        _readingPane.AddControl(rule);
 
         foreach (var att in msg.Attachments)
         {
@@ -277,29 +275,38 @@ public partial class CXPostApp
             var fileName = att.FileName;
             var icon = GetFileTypeIcon(fileName);
 
-            var attBar = Controls.StatusBar()
-                .AddLeftText($" {icon} {MarkupParser.Escape(fileName)}  [grey50]{sizeStr}[/]")
-                .AddLeft($"{idx + 1}", "Save", () => SaveAttachmentQuick(msg, idx, fileName))
-                .AddLeft($"Ctrl+{idx + 1}", "Save As", () => SaveAttachmentAs(msg, idx))
-                .WithMargin(2, 0, 2, 0)
-                .Build();
-            attBar.BackgroundColor = Color.Transparent;
-            _readingPane.AddControl(attBar);
-        }
+            var infoLabel = Controls.Markup(
+                $"{icon}  {MarkupParser.Escape(fileName)}  [grey50]{sizeStr}[/]").Build();
+            infoLabel.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        var rule2 = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
-        _readingPane.AddControl(rule2);
+            var actions = ToolbarControl.Create()
+                .AddButton("Save", (_, _) => SaveAttachmentQuick(msg, idx, fileName))
+                .AddButton("Save As", (_, _) => SaveAttachmentAs(msg, idx))
+                .Build();
+            actions.BackgroundColor = Color.Transparent;
+
+            var row = Controls.HorizontalGrid()
+                .Column(col => col.Add(infoLabel))
+                .Column(col => col.Add(actions))
+                .WithMargin(4, 0, 2, 0)
+                .Build();
+            row.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _readingPane.AddControl(row);
+        }
 
         if (msg.Attachments.Count > 1)
         {
-            var actionBar = Controls.StatusBar()
-                .AddLeft("A", "Save All", () => SaveAllAttachments(msg))
-                .AddLeft("Ctrl+A", "Save All to...", () => SaveAllAttachmentsAs(msg))
-                .WithMargin(2, 0, 2, 0)
+            var bulkActions = ToolbarControl.Create()
+                .AddButton("Save All", (_, _) => SaveAllAttachments(msg))
+                .AddButton("Save All to...", (_, _) => SaveAllAttachmentsAs(msg))
+                .WithMargin(4, 0, 2, 0)
                 .Build();
-            actionBar.BackgroundColor = Color.Transparent;
-            _readingPane.AddControl(actionBar);
+            bulkActions.BackgroundColor = Color.Transparent;
+            _readingPane.AddControl(bulkActions);
         }
+
+        var attRule = Controls.RuleBuilder().WithColor(Color.Grey23).WithMargin(2, 0, 2, 0).Build();
+        _readingPane.AddControl(attRule);
     }
 
     private void SaveAttachmentQuick(MailMessage msg, int index, string fileName)
