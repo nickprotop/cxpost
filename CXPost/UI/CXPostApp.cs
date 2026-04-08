@@ -160,6 +160,14 @@ public partial class CXPostApp : IDisposable
         _messageTable.FilteringEnabled = true;
         _messageTable.HoverEnabled = false;
         _messageTable.TruncationFade = true;
+        // Date column (index 4): sort by actual DateTime from row Tag
+        var dateCol = _messageTable.Columns[4];
+        dateCol.CustomRowComparer = (a, b) =>
+        {
+            var dateA = (a.Tag as MailMessage)?.Date ?? DateTime.MinValue;
+            var dateB = (b.Tag as MailMessage)?.Date ?? DateTime.MinValue;
+            return dateA.CompareTo(dateB);
+        };
         _messageTable.MultiSelectionChanged += (_, count) =>
         {
             var rowIdx = _messageTable.SelectedRowIndex;
