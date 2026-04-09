@@ -152,12 +152,12 @@ public class MailSyncCoordinator
             if (_contacts is ContactsService cs)
                 cs.ImportFromCache(_cache, account);
 
+            var globalNotify = config.Notifications;
             ImapLogger.Info($"[{account.Name}] SyncAccount completed: {totalMessages} new messages");
             _app.Value.EnqueueUiAction(() =>
             {
                 _app.Value.DismissMessage(syncMsgId);
                 _app.Value.EndSyncProgress();
-                var globalNotify = _configService.Load().Notifications;
                 if (globalNotify && account.NotificationsEnabled)
                     _notifications.NotifySyncComplete(account.Name, totalMessages);
             });

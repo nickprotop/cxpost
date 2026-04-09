@@ -8,6 +8,7 @@ public interface ICacheService
     List<MailFolder> GetFolders(string accountId);
     void SyncHeaders(int folderId, List<MailMessage> messages);
     List<MailMessage> GetMessages(int folderId);
+    List<MailMessage> GetMessageHeaders(int folderId);
     HashSet<uint> GetCachedUids(int folderId);
     string? GetBody(int folderId, uint uid);
     void StoreBody(int folderId, uint uid, string body, List<AttachmentInfo>? attachments = null);
@@ -15,4 +16,5 @@ public interface ICacheService
     void DeleteMessage(int folderId, uint uid);
     void RestoreMessage(int folderId, MailMessage message);
     void PurgeFolder(int folderId);
+    void InvalidateFolder(int folderId);
 }

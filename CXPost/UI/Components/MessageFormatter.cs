@@ -100,6 +100,32 @@ public static class MessageFormatter
         return $"{prefix} {subject}";
     }
 
+    /// <summary>
+    /// Strips Re:/Fwd:/RE:/FW: prefixes from a subject to get the base conversation subject.
+    /// Handles nested prefixes like "Re: Re: Fwd: Subject".
+    /// </summary>
+    public static string StripReplyPrefix(string? subject)
+    {
+        if (string.IsNullOrWhiteSpace(subject)) return "(no subject)";
+
+        var s = subject.Trim();
+        bool stripped;
+        do
+        {
+            stripped = false;
+            foreach (var prefix in new[] { "Re:", "RE:", "Fwd:", "FW:", "Fw:" })
+            {
+                if (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    s = s[prefix.Length..].TrimStart();
+                    stripped = true;
+                }
+            }
+        } while (stripped);
+
+        return string.IsNullOrWhiteSpace(s) ? "(no subject)" : s;
+    }
+
     public static string GetBulkForwardSubject(List<MailMessage> messages, string prefix = "Fwd:")
     {
         if (messages.Count == 0) return $"{prefix} ";

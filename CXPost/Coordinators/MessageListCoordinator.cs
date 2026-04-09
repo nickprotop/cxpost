@@ -54,12 +54,18 @@ public class MessageListCoordinator
             {
                 if (!_app.Value.IsSearchActive) return;
                 var displayed = _app.Value.GetDisplayedMessages();
+                // Batch: load each folder once, build lookup
+                var folderMessages = new Dictionary<int, Dictionary<uint, MailMessage>>();
+                foreach (var folderId in displayed.Select(m => m.FolderId).Distinct())
+                {
+                    var msgs = _cache.GetMessages(folderId);
+                    folderMessages[folderId] = msgs.ToDictionary(m => m.Uid);
+                }
                 var refreshed = new List<MailMessage>();
                 foreach (var msg in displayed)
                 {
-                    var cached = _cache.GetMessages(msg.FolderId)
-                        .FirstOrDefault(m => m.Uid == msg.Uid);
-                    if (cached != null)
+                    if (folderMessages.TryGetValue(msg.FolderId, out var lookup)
+                        && lookup.TryGetValue(msg.Uid, out var cached))
                         refreshed.Add(cached);
                 }
                 _app.Value.PopulateMessageList(refreshed);
@@ -284,6 +290,86 @@ public class MessageListCoordinator
     /// Optimistic delete: removes from cache/UI immediately, shows undo notification,
     /// then performs IMAP delete after undo window expires.
     /// </summary>
+    /// <summary>
+    /// Deletes a message from cache and starts undo window, but does NOT call RefreshMessageList.
+    /// The caller is responsible for updating the UI (table rows, reading pane, focus).
+    /// Used by the orchestrated delete flow where the table is updated by animation.
+    /// </summary>
+    public void DeleteMessageNoRefresh(MailMessage message, MailFolder folder, CancellationToken ct)
+    {
+        var account = GetAccountForFolder(folder);
+        if (account == null) return;
+
+        // Delete from cache (caller handles table row removal via animation)
+        _cache.DeleteMessage(folder.Id, message.Uid);
+        if (SelectedMessage?.Uid == message.Uid)
+            SelectedMessage = null;
+
+        // Undo window
+        var undoCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var undoId = $"undo-delete-{message.Uid}";
+
+        _app.Value.EnqueueUiAction(() =>
+            _app.Value.ShowUndoNotification(undoId, "Message moved to Trash", () =>
+            {
+                undoCts.Cancel();
+                _cache.RestoreMessage(folder.Id, message);
+                _app.Value.EnqueueUiAction(() =>
+                {
+                    RefreshMessageList();
+                    _app.Value.ShowSuccess("Delete undone");
+                });
+            }));
+
+        // Fire IMAP delete after undo window (5 seconds)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), undoCts.Token);
+
+                using var imap = await _imapFactory.CreateConnectionAsync(account, ct);
+                var trash = FolderResolver.GetTrash(account, _cache);
+
+                if (trash != null && folder.Id != trash.Id)
+                    await imap.MoveMessageAsync(folder.Path, trash.Path, message.Uid, ct);
+                else
+                    await imap.DeleteMessageAsync(folder.Path, message.Uid, ct);
+
+                _app.Value.EnqueueUiAction(() => _app.Value.DismissMessage(undoId));
+                undoCts.Dispose();
+            }
+            catch (OperationCanceledException)
+            {
+                if (undoCts.Token.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    // Undo triggered
+                }
+                else
+                {
+                    _cache.RestoreMessage(folder.Id, message);
+                    _app.Value.EnqueueUiAction(() =>
+                    {
+                        RefreshMessageList();
+                        _app.Value.DismissMessage(undoId);
+                    });
+                }
+                undoCts.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _cache.RestoreMessage(folder.Id, message);
+                _app.Value.EnqueueUiAction(() =>
+                {
+                    RefreshMessageList();
+                    _app.Value.DismissMessage(undoId);
+                    _app.Value.ShowError($"Delete failed: {ex.Message}");
+                });
+                undoCts.Dispose();
+            }
+        }, ct);
+    }
+
     public void DeleteMessageOptimistic(MailMessage message, MailFolder folder, CancellationToken ct)
     {
         var account = GetAccountForFolder(folder);

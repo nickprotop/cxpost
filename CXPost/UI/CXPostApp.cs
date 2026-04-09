@@ -87,6 +87,16 @@ public partial class CXPostApp : IDisposable
     private int _spinnerIndex;
     private float _syncPulsePhase;
 
+    // Conversation threading state
+    private bool _isThreadedView;
+    private readonly HashSet<string> _expandedThreadIds = new();
+    private List<ThreadSummary>? _threadSummaries;
+    private string? _readModeThreadContext; // null = show all, non-null = scoped to this threadId
+
+    // Delete flow: suppresses OnMessageSelected during orchestrated delete commit
+    // to prevent ShowMessagePreview cascade from stealing focus
+    private bool _suppressMessageSelectionHandler;
+
     // Search & filter state
     private volatile bool _isFlaggedFilterActive;
     private volatile bool _isSearchActive;
@@ -134,6 +144,7 @@ public partial class CXPostApp : IDisposable
             _layoutModeManager.SavePreviewColumnWidth(_config.PreviewColumnWidth);
         if (_config.PreviewHidden)
             _layoutModeManager.TogglePreview();
+        _isThreadedView = _config.ThreadedView;
     }
 
     public void Run()
@@ -236,6 +247,24 @@ public partial class CXPostApp : IDisposable
 
         _readModeList.SelectedItemChanged += (_, item) =>
         {
+            if (_isThreadedView && item?.Tag is ThreadSummary selectedThread)
+            {
+                ShowConversationPreview(selectedThread);
+                UpdatePreviewHeader(selectedThread.NewestMessage);
+                UpdateBottomBar();
+                return;
+            }
+            if (_isThreadedView && item?.Tag is MailMessage threadMsg && threadMsg.ThreadId != null)
+            {
+                var ts = _threadSummaries?.FirstOrDefault(t => t.ThreadId == threadMsg.ThreadId);
+                if (ts != null)
+                {
+                    ShowConversationPreview(ts, threadMsg);
+                    UpdatePreviewHeader(threadMsg);
+                    UpdateBottomBar();
+                    return;
+                }
+            }
             if (item?.Tag is MailMessage msg)
             {
                 // Sync selection back to message table so GetSelectedMessage() works
@@ -509,10 +538,9 @@ public partial class CXPostApp : IDisposable
         if (_currentLayout == "wide")
         {
             // Wide layout: Folders | Messages | Preview (3 columns)
-            var savedMessageWidth = _layoutModeManager.GetSavedMessageColumnWidth();
+            // Message column flexes — no explicit width, so it takes remaining space
+            // after folder (explicit) and preview (explicit) columns.
             var messageColumn = new ColumnContainer(_mainGrid);
-            if (savedMessageWidth > 0)
-                messageColumn.Width = savedMessageWidth;
             messageColumn.AddContent(_rightPanelHeader!);
             messageColumn.AddContent(_messageTable!);
             messageColumn.AddContent(_dashboardPanel!);

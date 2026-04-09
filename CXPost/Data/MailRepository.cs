@@ -120,6 +120,30 @@ public class MailRepository
         return messages;
     }
 
+    /// <summary>
+    /// Gets messages for a folder WITHOUT loading body_plain (header data only).
+    /// Use this for message list display and threading — much faster for large folders.
+    /// </summary>
+    public List<MailMessage> GetMessageHeaders(int folderId)
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, folder_id, uid, message_id, in_reply_to, "references", thread_id,
+                from_name, from_address, to_addresses, cc_addresses, subject, date,
+                is_read, is_flagged, has_attachments, NULL as body_plain, body_fetched, attachments_json
+            FROM messages WHERE folder_id = @folderId ORDER BY date DESC
+            """;
+        cmd.Parameters.AddWithValue("@folderId", folderId);
+
+        var messages = new List<MailMessage>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            messages.Add(ReadMessage(reader));
+        }
+        return messages;
+    }
+
     public void UpdateMessageFlags(int folderId, uint uid, bool isRead, bool isFlagged)
     {
         using var cmd = _connection.CreateCommand();

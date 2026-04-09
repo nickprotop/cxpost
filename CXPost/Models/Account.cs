@@ -62,4 +62,5 @@ public class CXPostConfig
     public int MessageColumnWidth { get; set; }
     public int PreviewColumnWidth { get; set; }
     public bool PreviewHidden { get; set; }
+    public bool ThreadedView { get; set; }
 }

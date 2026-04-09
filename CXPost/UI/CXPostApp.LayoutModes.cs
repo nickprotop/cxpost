@@ -148,6 +148,21 @@ public partial class CXPostApp
         // Ensure reading pane is visible — it may have been hidden by preview toggle
         if (_readingPane != null) _readingPane.Visible = true;
         if (_previewPanelHeader != null) _previewPanelHeader.Visible = true;
+        // Determine read mode strip context
+        _readModeThreadContext = null;
+        if (_isThreadedView && _messageTable != null)
+        {
+            var idx = _messageTable.SelectedRowIndex;
+            if (idx >= 0 && idx < _messageTable.RowCount)
+            {
+                var row = _messageTable.GetRow(idx);
+                if (row?.Tag is MailMessage childMsg && childMsg.ThreadId != null
+                    && _expandedThreadIds.Contains(childMsg.ThreadId))
+                {
+                    _readModeThreadContext = childMsg.ThreadId;
+                }
+            }
+        }
         PopulateReadModeStrip();
         RebuildMainGrid();
         TriggerReadingPaneFadeIn();
@@ -172,6 +187,7 @@ public partial class CXPostApp
                 _messageTable.SelectedRowIndex = stripIdx;
         }
 
+        _readModeThreadContext = null;
         _layoutModeManager.ExitReadMode();
         RebuildMainGrid();
 
@@ -212,16 +228,57 @@ public partial class CXPostApp
 
         _readModeList.ClearItems();
 
+        if (_isThreadedView && _readModeThreadContext != null)
+        {
+            // Scoped to a specific thread — show thread messages
+            var thread = _threadSummaries?.FirstOrDefault(t => t.ThreadId == _readModeThreadContext);
+            if (thread != null)
+            {
+                foreach (var msg in thread.Messages)
+                {
+                    var senderName = msg.FromName ?? msg.FromAddress ?? "Unknown";
+                    var textColor = msg.IsRead ? ColorScheme.ReadMarkup : ColorScheme.UnreadMarkup;
+                    var text = $"[{textColor}]{MarkupParser.Escape(senderName)}[/]";
+                    var icon = msg.IsFlagged ? "\u2605" : null;
+                    var iconColor = msg.IsFlagged ? (Color?)Color.Yellow : null;
+                    var item = new ListItem(text, icon, iconColor) { Tag = msg };
+                    _readModeList.AddItem(item);
+                }
+                if (_readModeList.Items.Count > 0)
+                    _readModeList.SelectedIndex = _readModeList.Items.Count - 1;
+                return;
+            }
+        }
+
+        if (_isThreadedView && _threadSummaries != null)
+        {
+            // Show thread list (collapsed)
+            foreach (var thread in _threadSummaries)
+            {
+                var senderName = thread.NewestMessage.FromName ?? thread.NewestMessage.FromAddress ?? "Unknown";
+                var textColor = thread.HasUnread ? ColorScheme.UnreadMarkup : ColorScheme.ReadMarkup;
+                var countSuffix = thread.IsThread ? $" [{ColorScheme.PrimaryMarkup}]{thread.Count}[/]" : "";
+                var text = $"[{textColor}]{MarkupParser.Escape(senderName)}[/]{countSuffix}";
+                var icon = thread.HasFlagged ? "\u2605" : null;
+                var iconColor = thread.HasFlagged ? (Color?)Color.Yellow : null;
+                var item = new ListItem(text, icon, iconColor) { Tag = thread };
+                _readModeList.AddItem(item);
+            }
+            var selectedIdx = _messageTable.SelectedRowIndex;
+            if (selectedIdx >= 0 && selectedIdx < _readModeList.Items.Count)
+                _readModeList.SelectedIndex = selectedIdx;
+            return;
+        }
+
+        // Flat mode — original behavior
         for (var i = 0; i < _messageTable.RowCount; i++)
         {
             var row = _messageTable.GetRow(i);
             if (row.Tag is not MailMessage msg) continue;
 
             var senderName = msg.FromName ?? msg.FromAddress ?? "Unknown";
-
             var textColor = msg.IsRead ? ColorScheme.ReadMarkup : ColorScheme.UnreadMarkup;
             var text = $"[{textColor}]{MarkupParser.Escape(senderName)}[/]";
-
             var icon = msg.IsFlagged ? "\u2605" : null;
             var iconColor = msg.IsFlagged ? (Color?)Color.Yellow : null;
 
@@ -229,10 +286,9 @@ public partial class CXPostApp
             _readModeList.AddItem(item);
         }
 
-        // Sync selection from table
-        var selectedIdx = _messageTable.SelectedRowIndex;
-        if (selectedIdx >= 0 && selectedIdx < _readModeList.Items.Count)
-            _readModeList.SelectedIndex = selectedIdx;
+        var selIdx = _messageTable.SelectedRowIndex;
+        if (selIdx >= 0 && selIdx < _readModeList.Items.Count)
+            _readModeList.SelectedIndex = selIdx;
     }
 
     /// <summary>
@@ -268,6 +324,7 @@ public partial class CXPostApp
         _config.MessageColumnWidth = _layoutModeManager.GetSavedMessageColumnWidth();
         _config.PreviewColumnWidth = _layoutModeManager.GetSavedPreviewColumnWidth();
         _config.PreviewHidden = _layoutModeManager.IsPreviewHidden;
+        _config.ThreadedView = _isThreadedView;
         _configService.Save(_config);
     }
 }

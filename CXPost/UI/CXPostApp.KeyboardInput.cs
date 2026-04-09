@@ -99,6 +99,103 @@ public partial class CXPostApp
             }
         }
 
+        // T: toggle threaded view
+        if (!ctrl && !shift && e.KeyInfo.Key == ConsoleKey.T && _messageTable is { Visible: true })
+        {
+            _isThreadedView = !_isThreadedView;
+            _expandedThreadIds.Clear();
+            _config.ThreadedView = _isThreadedView;
+            _configService.Save(_config);
+            RefreshCurrentView();
+            UpdateToolbar();
+            UpdateBottomBar();
+            e.Handled = true;
+            return;
+        }
+
+        // Enter/Right: expand/collapse thread in threaded mode
+        if (_isThreadedView && !_isSearchActive && _messageTable is { Visible: true, RowCount: > 0 }
+            && (e.KeyInfo.Key == ConsoleKey.RightArrow || e.KeyInfo.Key == ConsoleKey.Enter)
+            && !ctrl && !shift)
+        {
+            var idx = _messageTable.SelectedRowIndex;
+            if (idx >= 0 && idx < _messageTable.RowCount)
+            {
+                var row = _messageTable.GetRow(idx);
+                if (row?.Tag is ThreadSummary thread && thread.IsThread)
+                {
+                    // Toggle: expand if collapsed, collapse if expanded (Enter only)
+                    if (_expandedThreadIds.Contains(thread.ThreadId))
+                    {
+                        if (e.KeyInfo.Key == ConsoleKey.Enter)
+                        {
+                            _expandedThreadIds.Remove(thread.ThreadId);
+                            RebuildThreadedTable();
+                            for (int i = 0; i < _messageTable.RowCount; i++)
+                            {
+                                if (_messageTable.GetRow(i).Tag is ThreadSummary ts && ts.ThreadId == thread.ThreadId)
+                                { _messageTable.SelectedRowIndex = i; break; }
+                            }
+                            e.Handled = true;
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        _expandedThreadIds.Add(thread.ThreadId);
+                        RebuildThreadedTable();
+                        for (int i = 0; i < _messageTable.RowCount; i++)
+                        {
+                            if (_messageTable.GetRow(i).Tag is ThreadSummary ts && ts.ThreadId == thread.ThreadId)
+                            { _messageTable.SelectedRowIndex = i; break; }
+                        }
+                        e.Handled = true;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Left/Esc: collapse thread in threaded mode
+        if (_isThreadedView && !_isSearchActive && _messageTable is { Visible: true, RowCount: > 0 }
+            && (e.KeyInfo.Key == ConsoleKey.LeftArrow
+                || (e.KeyInfo.Key == ConsoleKey.Escape && _expandedThreadIds.Count > 0))
+            && !ctrl && !shift)
+        {
+            var idx = _messageTable.SelectedRowIndex;
+            if (idx >= 0 && idx < _messageTable.RowCount)
+            {
+                var row = _messageTable.GetRow(idx);
+                string? threadIdToCollapse = null;
+
+                if (row?.Tag is ThreadSummary thread && _expandedThreadIds.Contains(thread.ThreadId))
+                {
+                    threadIdToCollapse = thread.ThreadId;
+                }
+                else if (row?.Tag is MailMessage msg && msg.ThreadId != null && _expandedThreadIds.Contains(msg.ThreadId))
+                {
+                    threadIdToCollapse = msg.ThreadId;
+                }
+
+                if (threadIdToCollapse != null)
+                {
+                    _expandedThreadIds.Remove(threadIdToCollapse);
+                    RebuildThreadedTable();
+                    // Re-select the collapsed thread header
+                    for (int i = 0; i < _messageTable.RowCount; i++)
+                    {
+                        if (_messageTable.GetRow(i).Tag is ThreadSummary ts && ts.ThreadId == threadIdToCollapse)
+                        {
+                            _messageTable.SelectedRowIndex = i;
+                            break;
+                        }
+                    }
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
         if (e.KeyInfo.Key == ConsoleKey.Escape && GetCheckedCount() > 0)
         {
             ClearSelection();
@@ -448,11 +545,6 @@ public partial class CXPostApp
                             {
                                 EnqueueUiAction(() =>
                                 {
-                                    // Animate row fading out before permanent deletion
-                                    var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
-                                    if (rowIdx >= 0)
-                                        _messageTable?.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(300));
-
                                     _cacheService.DeleteMessage(folder.Id, msg.Uid);
                                     _messageListCoordinator.RefreshMessageList();
                                     var nextMsg = GetSelectedMessage();
@@ -475,17 +567,44 @@ public partial class CXPostApp
                     }
                     else
                     {
-                        // Animate row fading out before soft delete (move to trash)
-                        var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
-                        if (rowIdx >= 0)
-                            _messageTable?.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(300));
+                        // === Clean delete flow ===
+                        //
+                        // 1. Capture state
+                        // 2. Animate the row (auto-removes on complete, fires SelectedRowChanged
+                        //    → OnMessageSelected → ShowMessagePreview + body fetch for next message)
+                        // 3. After animation: delete from cache + undo window + force focus back
 
-                        _messageListCoordinator.DeleteMessageOptimistic(msg, folder, _cts.Token);
-                        var nextMsg = GetSelectedMessage();
-                        if (nextMsg != null) ShowMessagePreview(nextMsg);
-                        else ClearReadingPane();
-                        UpdateBottomBar();
-                        UpdateToolbar();
+                        var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
+                        if (rowIdx < 0 || _messageTable == null)
+                        {
+                            e.Handled = true;
+                            return;
+                        }
+
+                        var capturedMsg = msg;
+                        var capturedFolder = folder;
+                        var tableHadFocus = _mainWindow?.FocusManager?.IsInFocusPath(_messageTable) == true;
+
+                        _messageTable.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(250));
+
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(280, _cts.Token);
+                            EnqueueUiAction(() =>
+                            {
+                                if (_messageTable == null) return;
+
+                                // Delete from cache + start undo window (no RefreshMessageList —
+                                // the animation already removed the table row)
+                                _messageListCoordinator.DeleteMessageNoRefresh(capturedMsg, capturedFolder, _cts.Token);
+
+                                // Force focus back to the message table. The animation's RemoveRow
+                                // triggered OnMessageSelected → ShowMessagePreview which may have
+                                // stolen focus to the reading pane's interactive children.
+                                if (tableHadFocus && _mainWindow?.FocusManager != null)
+                                    _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
+                            });
+                        }, _cts.Token);
                     }
                 }
             }

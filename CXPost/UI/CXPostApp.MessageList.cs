@@ -24,6 +24,12 @@ public partial class CXPostApp
     {
         if (_messageTable == null) return;
 
+        if (_isThreadedView && !_isSearchActive)
+        {
+            PopulateThreadedMessageList(messages);
+            return;
+        }
+
         if (_isFlaggedFilterActive)
             messages = messages.Where(m => m.IsFlagged).ToList();
 
@@ -212,9 +218,42 @@ public partial class CXPostApp
 
     private void OnMessageSelected(object? sender, int rowIndex)
     {
+        if (_suppressMessageSelectionHandler) return;
         if (_messageTable == null || rowIndex < 0) return;
         var row = _messageTable.GetRow(rowIndex);
-        if (row?.Tag is not MailMessage msg) return;
+
+        // Threaded mode: show conversation preview for multi-message threads
+        if (_isThreadedView && row != null)
+        {
+            if (row.Tag is ThreadSummary thread && thread.IsThread)
+            {
+                ShowConversationPreview(thread);
+                UpdatePreviewHeader(thread.NewestMessage);
+                UpdateBottomBar();
+                UpdateToolbar();
+                _messageListCoordinator.SelectMessage(thread.NewestMessage);
+                return;
+            }
+            else if (row.Tag is MailMessage childMsg)
+            {
+                var ts = _threadSummaries?.FirstOrDefault(t => t.ThreadId == childMsg.ThreadId);
+                if (ts != null && ts.IsThread)
+                {
+                    ShowConversationPreview(ts, childMsg);
+                    UpdatePreviewHeader(childMsg);
+                    UpdateBottomBar();
+                    UpdateToolbar();
+                    _messageListCoordinator.SelectMessage(childMsg);
+                    return;
+                }
+            }
+        }
+
+        // Single message (flat mode, or single-message thread) — extract MailMessage from tag
+        MailMessage? msg = row?.Tag as MailMessage;
+        if (msg == null && row?.Tag is ThreadSummary singleThread)
+            msg = singleThread.NewestMessage;
+        if (msg == null) return;
 
         // Always show preview for cursor message (checkboxes managed by MultiSelectionChanged event)
         ShowMessagePreview(msg);
@@ -246,6 +285,11 @@ public partial class CXPostApp
                 var fetchCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
                 _bodyFetchCts = fetchCts;
 
+                // Capture whether the message table had focus at the moment the fetch started.
+                // If so, we'll restore it after ShowMessagePreview rebuilds the reading pane
+                // (which would otherwise steal focus to its interactive children).
+                var tableHadFocus = _mainWindow?.FocusManager?.IsInFocusPath(_messageTable) == true;
+
                 _ = Task.Run(async () =>
                 {
                     try
@@ -258,6 +302,12 @@ public partial class CXPostApp
                             {
                                 ShowMessagePreview(capturedMsg);
                                 TriggerReadingPaneFadeIn();
+
+                                // Restore focus to the message table if it had focus when
+                                // the fetch started. ShowMessagePreview's ClearContents/AddControl
+                                // may have moved focus to the reading pane's children.
+                                if (tableHadFocus && _mainWindow?.FocusManager != null && _messageTable != null)
+                                    _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
                             }
                         });
                     }
@@ -287,7 +337,9 @@ public partial class CXPostApp
         var idx = _messageTable.SelectedRowIndex;
         if (idx < 0) return null;
         var row = _messageTable.GetRow(idx);
-        return row?.Tag as MailMessage;
+        if (row?.Tag is MailMessage msg) return msg;
+        if (row?.Tag is Components.ThreadSummary thread) return thread.NewestMessage;
+        return null;
     }
 
     public List<MailMessage> GetDisplayedMessages()
@@ -307,8 +359,15 @@ public partial class CXPostApp
     {
         if (_messageTable == null) return [];
         return _messageTable.GetSelectedRows()
-            .Where(r => r.Tag is MailMessage)
-            .Select(r => (MailMessage)r.Tag!)
+            .SelectMany(r =>
+            {
+                if (r.Tag is Components.ThreadSummary thread)
+                    return thread.Messages;
+                if (r.Tag is MailMessage msg)
+                    return new[] { msg };
+                return Enumerable.Empty<MailMessage>();
+            })
+            .Distinct()
             .ToList();
     }
 
@@ -389,6 +448,16 @@ public partial class CXPostApp
             allMessages.AddRange(_cacheService.GetMessages(fId));
         allMessages.Sort((a, b) => b.Date.CompareTo(a.Date));
         PopulateMessageList(allMessages);
+    }
+
+    private void RefreshCurrentView()
+    {
+        var folder = _messageListCoordinator.CurrentFolder;
+        if (folder == null) return;
+        var messages = _cacheService.GetMessages(folder.Id);
+        foreach (var m in messages)
+            m.AccountId ??= folder.AccountId;
+        PopulateMessageList(messages);
     }
 
     private static string FormatDate(DateTime date)

@@ -7,6 +7,7 @@ namespace CXPost.Services;
 public class ConfigService : IConfigService
 {
     private readonly string _configPath;
+    private CXPostConfig? _cached;
 
     public ConfigService(string configDir)
     {
@@ -15,8 +16,13 @@ public class ConfigService : IConfigService
 
     public CXPostConfig Load()
     {
+        if (_cached != null) return _cached;
+
         if (!File.Exists(_configPath))
-            return new CXPostConfig();
+        {
+            _cached = new CXPostConfig();
+            return _cached;
+        }
 
         var yaml = File.ReadAllText(_configPath);
         var deserializer = new DeserializerBuilder()
@@ -24,11 +30,14 @@ public class ConfigService : IConfigService
             .IgnoreUnmatchedProperties()
             .Build();
 
-        return deserializer.Deserialize<CXPostConfig>(yaml) ?? new CXPostConfig();
+        _cached = deserializer.Deserialize<CXPostConfig>(yaml) ?? new CXPostConfig();
+        return _cached;
     }
 
     public void Save(CXPostConfig config)
     {
+        _cached = config;
+
         var dir = Path.GetDirectoryName(_configPath);
         if (dir != null && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);

@@ -150,6 +150,11 @@ public partial class CXPostApp
                 if (!_layoutModeManager.IsReadMode)
                 {
                     _bottomBar.AddRightSeparator();
+                    var threadColor = _isThreadedView ? ColorScheme.PrimaryMarkup : ColorScheme.MutedMarkup;
+                    _bottomBar.AddRightText($"[{threadColor}]Thread[/] [{ColorScheme.MutedMarkup}]T[/]",
+                        () => { _isThreadedView = !_isThreadedView; _expandedThreadIds.Clear(); _config.ThreadedView = _isThreadedView; _configService.Save(_config); RefreshCurrentView(); UpdateToolbar(); UpdateBottomBar(); });
+
+                    _bottomBar.AddRightSeparator();
                     var layoutName = _currentLayout == "classic" ? "Wide" : "Classic";
                     _bottomBar.AddRightText($"[{ColorScheme.MutedMarkup}]{layoutName}[/] [{ColorScheme.MutedMarkup}]F8[/]",
                         () => SimulateKey(ConsoleKey.F8));
