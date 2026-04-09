@@ -247,17 +247,33 @@ public partial class CXPostApp : IDisposable
 
         _readModeList.SelectedItemChanged += (_, item) =>
         {
-            if (_isThreadedView && item?.Tag is ThreadSummary selectedThread)
+            if (_isThreadedView && item?.Tag is ThreadSummary selectedThread && selectedThread.IsThread)
             {
                 ShowConversationPreview(selectedThread);
                 UpdatePreviewHeader(selectedThread.NewestMessage);
                 UpdateBottomBar();
                 return;
             }
+            // Unwrap single-message ThreadSummary so it renders as a plain message, not a conversation
+            if (item?.Tag is ThreadSummary singleThread && !singleThread.IsThread)
+            {
+                var only = singleThread.NewestMessage;
+                if (_messageTable != null && _readModeList != null)
+                {
+                    var idx = _readModeList.SelectedIndex;
+                    if (idx >= 0 && idx < _messageTable.RowCount)
+                        _messageTable.SelectedRowIndex = idx;
+                }
+                ShowMessagePreview(only);
+                UpdatePreviewHeader(only);
+                UpdateToolbar();
+                UpdateBottomBar();
+                return;
+            }
             if (_isThreadedView && item?.Tag is MailMessage threadMsg && threadMsg.ThreadId != null)
             {
                 var ts = _threadSummaries?.FirstOrDefault(t => t.ThreadId == threadMsg.ThreadId);
-                if (ts != null)
+                if (ts != null && ts.IsThread)
                 {
                     ShowConversationPreview(ts, threadMsg);
                     UpdatePreviewHeader(threadMsg);
@@ -537,10 +553,10 @@ public partial class CXPostApp : IDisposable
 
         if (_currentLayout == "wide")
         {
-            // Wide layout: Folders | Messages | Preview (3 columns)
-            // Message column flexes — no explicit width, so it takes remaining space
-            // after folder (explicit) and preview (explicit) columns.
+            // Wide layout: Folders | Messages | Preview (3 columns, all with explicit widths)
+            var savedMessageWidth = _layoutModeManager.GetSavedMessageColumnWidth();
             var messageColumn = new ColumnContainer(_mainGrid);
+            messageColumn.Width = savedMessageWidth > 0 ? savedMessageWidth : 40;
             messageColumn.AddContent(_rightPanelHeader!);
             messageColumn.AddContent(_messageTable!);
             messageColumn.AddContent(_dashboardPanel!);
@@ -548,8 +564,7 @@ public partial class CXPostApp : IDisposable
 
             var savedPreviewWidth = _layoutModeManager.GetSavedPreviewColumnWidth();
             _previewColumn = new ColumnContainer(_mainGrid);
-            if (savedPreviewWidth > 0)
-                _previewColumn.Width = savedPreviewWidth;
+            _previewColumn.Width = savedPreviewWidth > 0 ? savedPreviewWidth : 50;
             _previewColumn.AddContent(_previewPanelHeader!);
             _previewColumn.AddContent(_readingPane!);
             _previewSplitter = _mainGrid.AddColumnWithSplitter(_previewColumn);

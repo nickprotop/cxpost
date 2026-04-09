@@ -23,6 +23,12 @@ public static class HtmlConverter
 
     private static string Convert(string html, HtmlOutputMode mode)
     {
+        // Strip invisible format-control chars that Outlook/Word embeds in HTML and that
+        // have no rendering value. Left in, they survive parsing and land in the terminal
+        // output as stray zero-width runes on otherwise-empty lines, confusing layout.
+        // Keep ZWJ (U+200D) and ZWNJ (U+200C) — they are significant for emoji/scripts.
+        html = StripInvisibleFormatChars(html);
+
         var parser = new AngleSharp.Html.Parser.HtmlParser();
         var document = parser.ParseDocument(html);
 
@@ -434,6 +440,25 @@ public static class HtmlConverter
         EnsureNewline(sb, state);
         if (sb.Length >= 2 && sb[^2] != '\n')
             sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Removes zero-width/format-control characters that break terminal rendering:
+    /// U+FEFF (BOM / zero-width no-break space), U+200B (ZWSP), U+2060 (word joiner),
+    /// U+180E (Mongolian vowel separator). Preserves U+200C/U+200D (ZWNJ/ZWJ) which
+    /// are meaningful for scripts and emoji sequences.
+    /// </summary>
+    private static string StripInvisibleFormatChars(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        if (s.IndexOfAny(new[] { '\uFEFF', '\u200B', '\u2060', '\u180E' }) < 0) return s;
+        var sb = new StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            if (c is '\uFEFF' or '\u200B' or '\u2060' or '\u180E') continue;
+            sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     private static string CollapseWhitespace(string text)

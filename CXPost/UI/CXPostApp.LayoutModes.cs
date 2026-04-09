@@ -21,7 +21,7 @@ public partial class CXPostApp
             // In read mode, toggle and rebuild grid
             var columns = _mainGrid.Columns;
             if (!_layoutModeManager.IsFolderTreeHidden && columns.Count > 0)
-                _layoutModeManager.SaveFolderWidth(columns[0].Width ?? 28);
+                _layoutModeManager.SaveFolderWidth(columns[0].Width ?? columns[0].ActualWidth);
             _layoutModeManager.ToggleFolderTree();
             RebuildMainGrid();
         }
@@ -34,7 +34,7 @@ public partial class CXPostApp
 
             if (!_layoutModeManager.IsFolderTreeHidden)
             {
-                _layoutModeManager.SaveFolderWidth(columns[0].Width ?? 28);
+                _layoutModeManager.SaveFolderWidth(columns[0].Width ?? columns[0].ActualWidth);
                 _layoutModeManager.ToggleFolderTree();
                 _mainGrid.AnimateColumnWidth(0, 0, duration);
             }
@@ -65,7 +65,8 @@ public partial class CXPostApp
 
             if (!_layoutModeManager.IsPreviewHidden)
             {
-                _layoutModeManager.SavePreviewColumnWidth(columns[previewColIdx].Width ?? 0);
+                var pc = columns[previewColIdx];
+                _layoutModeManager.SavePreviewColumnWidth(pc.Width ?? pc.ActualWidth);
                 _layoutModeManager.TogglePreview();
                 _mainGrid.AnimateColumnWidth(previewColIdx, 0, duration);
             }
@@ -73,7 +74,7 @@ public partial class CXPostApp
             {
                 _layoutModeManager.TogglePreview();
                 var saved = _layoutModeManager.GetSavedPreviewColumnWidth();
-                _mainGrid.AnimateColumnWidth(previewColIdx, saved > 0 ? saved : 200, duration);
+                _mainGrid.AnimateColumnWidth(previewColIdx, saved > 0 ? saved : 50, duration);
             }
         }
         else
@@ -135,14 +136,14 @@ public partial class CXPostApp
     {
         if (_mainGrid == null || _layoutModeManager.IsReadMode) return;
 
-        // Save widths before restructuring
+        // Save widths before restructuring (use ActualWidth fallback for flex columns)
         var columns = _mainGrid.Columns;
         if (columns.Count > 0)
-            _layoutModeManager.SaveFolderWidth(columns[0].Width ?? 28);
+            _layoutModeManager.SaveFolderWidth(columns[0].Width ?? columns[0].ActualWidth);
         if (columns.Count > 1)
-            _layoutModeManager.SaveMessageColumnWidth(columns[1].Width ?? 0);
-        if (_currentLayout == "wide" && columns.Count > 2)
-            _layoutModeManager.SavePreviewColumnWidth(columns[2].Width ?? 0);
+            _layoutModeManager.SaveMessageColumnWidth(columns[1].Width ?? columns[1].ActualWidth);
+        if (_currentLayout == "wide" && columns.Count > 2 && !_layoutModeManager.IsPreviewHidden)
+            _layoutModeManager.SavePreviewColumnWidth(columns[2].Width ?? columns[2].ActualWidth);
 
         _layoutModeManager.EnterReadMode();
         // Ensure reading pane is visible — it may have been hidden by preview toggle
@@ -302,16 +303,20 @@ public partial class CXPostApp
         var columns = _mainGrid.Columns;
         if (columns.Count == 0) return;
 
+        // Fall back to ActualWidth when a column is currently flex (Width == null),
+        // which happens after a splitter drag clears one side of the pair.
+        static int EffectiveWidth(ColumnContainer c) => c.Width ?? c.ActualWidth;
+
         // Column[0] is always the folder column in normal mode
         if (!_layoutModeManager.IsFolderTreeHidden)
-            _layoutModeManager.SaveFolderWidth(columns[0].Width ?? 28);
+            _layoutModeManager.SaveFolderWidth(EffectiveWidth(columns[0]));
 
         if (_currentLayout == "wide")
         {
             if (columns.Count > 1)
-                _layoutModeManager.SaveMessageColumnWidth(columns[1].Width ?? 0);
-            if (columns.Count > 2)
-                _layoutModeManager.SavePreviewColumnWidth(columns[2].Width ?? 0);
+                _layoutModeManager.SaveMessageColumnWidth(EffectiveWidth(columns[1]));
+            if (columns.Count > 2 && !_layoutModeManager.IsPreviewHidden)
+                _layoutModeManager.SavePreviewColumnWidth(EffectiveWidth(columns[2]));
         }
     }
 
