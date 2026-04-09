@@ -413,6 +413,11 @@ public partial class CXPostApp : IDisposable
             .OnKeyPressed(OnKeyPressed)
             .Build();
 
+        // PreviewKeyPressed fires before focused controls consume the key. Used for
+        // read-mode arrow interception so arrows browse the message strip even when
+        // the strip itself (or any other control) holds focus.
+        _mainWindow.PreviewKeyPressed += OnPreviewKeyPressed;
+
 
         // Confirm before quit
         _mainWindow.OnClosing += (_, args) =>

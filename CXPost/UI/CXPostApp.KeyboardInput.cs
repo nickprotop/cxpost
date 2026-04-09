@@ -18,6 +18,49 @@ namespace CXPost.UI;
 
 public partial class CXPostApp
 {
+    /// <summary>
+    /// Fires before focused controls see the key. Used to intercept navigation keys
+    /// that would otherwise be consumed by whichever control has focus — notably,
+    /// arrow/PgUp/PgDn/Home/End in read mode, which must always scroll the reading
+    /// pane regardless of whether the message strip or the reading pane holds focus.
+    /// </summary>
+    private void OnPreviewKeyPressed(object? sender, KeyPressedEventArgs e)
+    {
+        var ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
+        var shift = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Shift);
+
+        if (_layoutModeManager.IsReadMode && _readingPane != null && !ctrl && !shift)
+        {
+            switch (e.KeyInfo.Key)
+            {
+                case ConsoleKey.UpArrow:
+                    _readingPane.ScrollVerticalBy(-1);
+                    e.Handled = true;
+                    return;
+                case ConsoleKey.DownArrow:
+                    _readingPane.ScrollVerticalBy(1);
+                    e.Handled = true;
+                    return;
+                case ConsoleKey.PageUp:
+                    _readingPane.ScrollVerticalBy(-Math.Max(1, _readingPane.ActualHeight - 2));
+                    e.Handled = true;
+                    return;
+                case ConsoleKey.PageDown:
+                    _readingPane.ScrollVerticalBy(Math.Max(1, _readingPane.ActualHeight - 2));
+                    e.Handled = true;
+                    return;
+                case ConsoleKey.Home:
+                    _readingPane.ScrollToTop();
+                    e.Handled = true;
+                    return;
+                case ConsoleKey.End:
+                    _readingPane.ScrollToBottom();
+                    e.Handled = true;
+                    return;
+            }
+        }
+    }
+
     private void OnKeyPressed(object? sender, KeyPressedEventArgs e)
     {
         var ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
