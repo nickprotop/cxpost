@@ -48,6 +48,7 @@ public partial class CXPostApp
 
         UpdateToolbar();
         UpdateBottomBar();
+        PersistLayoutWidths();
     }
 
     private void TogglePreview()
@@ -130,6 +131,7 @@ public partial class CXPostApp
 
         UpdateToolbar();
         UpdateBottomBar();
+        PersistLayoutWidths();
     }
 
     private void EnterReadMode()
@@ -142,8 +144,18 @@ public partial class CXPostApp
             _layoutModeManager.SaveFolderWidth(columns[0].Width ?? columns[0].ActualWidth);
         if (columns.Count > 1)
             _layoutModeManager.SaveMessageColumnWidth(columns[1].Width ?? columns[1].ActualWidth);
-        if (_currentLayout == "wide" && columns.Count > 2 && !_layoutModeManager.IsPreviewHidden)
-            _layoutModeManager.SavePreviewColumnWidth(columns[2].Width ?? columns[2].ActualWidth);
+        if (_currentLayout == "wide" && columns.Count > 2)
+        {
+            var pw = columns[2].Width ?? columns[2].ActualWidth;
+            if (pw > 0)
+                _layoutModeManager.SavePreviewColumnWidth(pw);
+        }
+        if (_currentLayout == "classic" && _messageTable != null)
+        {
+            var h = _messageTable.Height ?? _messageTable.ActualHeight;
+            if (h > 0)
+                _layoutModeManager.SaveMessageListHeight(h);
+        }
 
         _layoutModeManager.EnterReadMode();
         // Ensure reading pane is visible — it may have been hidden by preview toggle
@@ -315,8 +327,19 @@ public partial class CXPostApp
         {
             if (columns.Count > 1)
                 _layoutModeManager.SaveMessageColumnWidth(EffectiveWidth(columns[1]));
-            if (columns.Count > 2 && !_layoutModeManager.IsPreviewHidden)
-                _layoutModeManager.SavePreviewColumnWidth(EffectiveWidth(columns[2]));
+            if (columns.Count > 2)
+            {
+                var pw = EffectiveWidth(columns[2]);
+                if (pw > 0)
+                    _layoutModeManager.SavePreviewColumnWidth(pw);
+            }
+        }
+        else if (_currentLayout == "classic" && _messageTable != null)
+        {
+            // Classic layout: capture message table height (above horizontal splitter)
+            var h = _messageTable.Height ?? _messageTable.ActualHeight;
+            if (h > 0)
+                _layoutModeManager.SaveMessageListHeight(h);
         }
     }
 
@@ -328,6 +351,7 @@ public partial class CXPostApp
         _config.FolderColumnWidth = _layoutModeManager.GetSavedFolderWidth();
         _config.MessageColumnWidth = _layoutModeManager.GetSavedMessageColumnWidth();
         _config.PreviewColumnWidth = _layoutModeManager.GetSavedPreviewColumnWidth();
+        _config.MessageListHeight = _layoutModeManager.GetSavedMessageListHeight();
         _config.PreviewHidden = _layoutModeManager.IsPreviewHidden;
         _config.ThreadedView = _isThreadedView;
         _configService.Save(_config);

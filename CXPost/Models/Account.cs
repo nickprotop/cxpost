@@ -57,10 +57,11 @@ public class CXPostConfig
     public string LastLayout { get; set; } = "classic";
     public string? LastFolderPath { get; set; }
 
-    // Layout widths (persisted across sessions)
+    // Layout widths/heights (persisted across sessions)
     public int FolderColumnWidth { get; set; } = 28;
     public int MessageColumnWidth { get; set; }
     public int PreviewColumnWidth { get; set; }
+    public int MessageListHeight { get; set; }  // classic layout: message table height above horizontal splitter
     public bool PreviewHidden { get; set; }
     public bool ThreadedView { get; set; }
 }

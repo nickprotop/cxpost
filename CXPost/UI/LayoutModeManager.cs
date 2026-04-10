@@ -78,4 +78,14 @@ public class LayoutModeManager
     }
 
     public int GetSavedMessageColumnWidth() => _savedMessageColumnWidth;
+
+    // ── Classic layout: message list height (above horizontal splitter) ─
+    private int _savedMessageListHeight;
+
+    public void SaveMessageListHeight(int height)
+    {
+        if (height > 0) _savedMessageListHeight = height;
+    }
+
+    public int GetSavedMessageListHeight() => _savedMessageListHeight;
 }

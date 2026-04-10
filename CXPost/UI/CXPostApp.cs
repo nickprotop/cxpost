@@ -135,13 +135,15 @@ public partial class CXPostApp : IDisposable
             ? (_config.LastLayout is "classic" or "wide" ? _config.LastLayout : "classic")
             : (_config.Layout is "classic" or "wide" ? _config.Layout : "classic");
 
-        // Restore layout widths from config
+        // Restore layout widths/heights from config
         if (_config.FolderColumnWidth > 0)
             _layoutModeManager.SaveFolderWidth(_config.FolderColumnWidth);
         if (_config.MessageColumnWidth > 0)
             _layoutModeManager.SaveMessageColumnWidth(_config.MessageColumnWidth);
         if (_config.PreviewColumnWidth > 0)
             _layoutModeManager.SavePreviewColumnWidth(_config.PreviewColumnWidth);
+        if (_config.MessageListHeight > 0)
+            _layoutModeManager.SaveMessageListHeight(_config.MessageListHeight);
         if (_config.PreviewHidden)
             _layoutModeManager.TogglePreview();
         _isThreadedView = _config.ThreadedView;
@@ -599,6 +601,11 @@ public partial class CXPostApp : IDisposable
             rightColumn.AddContent(_dashboardPanel!);
             _mainGrid.AddColumnWithSplitter(rightColumn);
 
+            // Restore message table height from last session (horizontal splitter position)
+            var savedListHeight = _layoutModeManager.GetSavedMessageListHeight();
+            if (savedListHeight > 0 && _messageTable != null)
+                _messageTable.Height = savedListHeight;
+
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = true;
 
             // Respect preview hidden state
@@ -667,6 +674,10 @@ public partial class CXPostApp : IDisposable
 
     public void Dispose()
     {
+        // Best-effort capture of live grid widths. In read mode this is a no-op
+        // (grid has a different structure) — safe because EnterReadMode() already
+        // captured the normal-mode widths into _layoutModeManager before restructuring.
+        // PersistLayoutWidths always writes whatever is in _layoutModeManager to disk.
         SaveCurrentGridWidths();
         PersistLayoutWidths();
         StopAllSyncLoops();
