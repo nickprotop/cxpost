@@ -252,6 +252,7 @@ public partial class CXPostApp : IDisposable
                 ShowConversationPreview(selectedThread);
                 UpdatePreviewHeader(selectedThread.NewestMessage);
                 UpdateBottomBar();
+                DebouncedFetchThreadBodies(selectedThread, selectedThread.NewestMessage);
                 return;
             }
             // Unwrap single-message ThreadSummary so it renders as a plain message, not a conversation
@@ -278,6 +279,7 @@ public partial class CXPostApp : IDisposable
                     ShowConversationPreview(ts, threadMsg);
                     UpdatePreviewHeader(threadMsg);
                     UpdateBottomBar();
+                    DebouncedFetchThreadBodies(ts, threadMsg);
                     return;
                 }
             }

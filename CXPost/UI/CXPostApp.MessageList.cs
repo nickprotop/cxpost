@@ -232,6 +232,7 @@ public partial class CXPostApp
                 UpdateBottomBar();
                 UpdateToolbar();
                 _messageListCoordinator.SelectMessage(thread.NewestMessage);
+                DebouncedFetchThreadBodies(thread, thread.NewestMessage);
                 return;
             }
             else if (row.Tag is MailMessage childMsg)
@@ -244,6 +245,7 @@ public partial class CXPostApp
                     UpdateBottomBar();
                     UpdateToolbar();
                     _messageListCoordinator.SelectMessage(childMsg);
+                    DebouncedFetchThreadBodies(ts, childMsg);
                     return;
                 }
             }
@@ -324,6 +326,76 @@ public partial class CXPostApp
                 }, fetchCts.Token);
             }, null, 150, Timeout.Infinite);
         }
+    }
+
+    /// <summary>
+    /// Fetches unfetched bodies for all messages in a thread, with debounce and cancellation
+    /// mirroring the single-message fetch pattern. Re-renders the conversation progressively
+    /// as each body arrives. Only the highlighted message is marked as read.
+    /// </summary>
+    private void DebouncedFetchThreadBodies(ThreadSummary thread, MailMessage? highlightedMessage)
+    {
+        var folder = _messageListCoordinator.CurrentFolder;
+        if (folder == null) return;
+
+        // Cancel any in-flight fetch (same pattern as single-message path)
+        var oldCts = _bodyFetchCts;
+        _bodyFetchCts = null;
+        try { oldCts?.Cancel(); } catch (ObjectDisposedException) { }
+        oldCts?.Dispose();
+        _bodyFetchDebounce?.Dispose();
+
+        var unfetched = thread.Messages
+            .Where(m => !m.BodyFetched || (m.HasAttachments && m.Attachments == null))
+            .ToList();
+        if (unfetched.Count == 0) return;
+
+        var capturedHighlight = highlightedMessage ?? thread.NewestMessage;
+
+        _bodyFetchDebounce = new System.Threading.Timer(_ =>
+        {
+            // Verify this thread is still selected after debounce
+            if (_messageListCoordinator.SelectedMessage?.Uid != capturedHighlight.Uid) return;
+
+            var fetchCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            _bodyFetchCts = fetchCts;
+
+            _ = Task.Run(async () =>
+            {
+                var tasks = unfetched.Select(async msg =>
+                {
+                    try
+                    {
+                        if (msg.Uid == capturedHighlight.Uid && msg.FolderId == capturedHighlight.FolderId)
+                            await _messageListCoordinator.FetchAndShowBodyAsync(msg, fetchCts.Token);
+                        else
+                            await _syncCoordinator.FetchBodyAsync(folder, msg, fetchCts.Token);
+
+                        // Re-render conversation on UI thread after each body arrives
+                        EnqueueUiAction(() =>
+                        {
+                            if (_messageListCoordinator.SelectedMessage?.Uid == capturedHighlight.Uid)
+                                ShowConversationPreview(thread, capturedHighlight);
+                        });
+                    }
+                    catch (OperationCanceledException) { }
+                    catch (Exception ex)
+                    {
+                        ImapLogger.Error($"Thread body fetch failed for uid={msg.Uid}: {ex.GetType().Name}: {ex.Message}", ex);
+                    }
+                });
+
+                try
+                {
+                    await Task.WhenAll(tasks);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    if (_messageListCoordinator.SelectedMessage?.Uid == capturedHighlight.Uid)
+                        EnqueueUiAction(() => ShowError($"Failed to load thread messages: {ex.Message}"));
+                }
+            }, fetchCts.Token);
+        }, null, 150, Timeout.Infinite);
     }
 
     private void OnMessageActivated(object? sender, int rowIndex)
