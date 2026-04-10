@@ -104,6 +104,15 @@ public static class MessageFormatter
     /// Strips Re:/Fwd:/RE:/FW: prefixes from a subject to get the base conversation subject.
     /// Handles nested prefixes like "Re: Re: Fwd: Subject".
     /// </summary>
+    private static readonly string[] ReplyPrefixes = { "Re:", "RE:", "Fwd:", "FW:", "Fw:" };
+
+    public static bool HasReplyPrefix(string? subject)
+    {
+        if (string.IsNullOrWhiteSpace(subject)) return false;
+        var s = subject.Trim();
+        return ReplyPrefixes.Any(p => s.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+    }
+
     public static string StripReplyPrefix(string? subject)
     {
         if (string.IsNullOrWhiteSpace(subject)) return "(no subject)";
@@ -113,7 +122,7 @@ public static class MessageFormatter
         do
         {
             stripped = false;
-            foreach (var prefix in new[] { "Re:", "RE:", "Fwd:", "FW:", "Fw:" })
+            foreach (var prefix in ReplyPrefixes)
             {
                 if (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 {
