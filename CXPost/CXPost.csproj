@@ -15,7 +15,7 @@
   </ItemGroup>
   <!-- CI/release: use NuGet package -->
   <ItemGroup Condition="!Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
-    <PackageReference Include="SharpConsoleUI" Version="2.4.52" />
+    <PackageReference Include="SharpConsoleUI" Version="2.4.53" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +24,6 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.5" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
-    <PackageReference Include="YamlDotNet" Version="16.*" />
+    <PackageReference Include="YamlDotNet" Version="17.0.1" />
   </ItemGroup>
 </Project>
