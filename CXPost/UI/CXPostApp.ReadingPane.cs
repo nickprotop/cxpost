@@ -24,6 +24,7 @@ public partial class CXPostApp
         if (_readingPane == null) return;
 
         _readingPane.ClearContents();
+        _readingPane.ScrollToTop();
 
 
         // Header

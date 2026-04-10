@@ -199,6 +199,7 @@ public partial class CXPostApp
         try
         {
         _readingPane.ClearContents();
+        _readingPane.ScrollToTop();
 
         highlightedMessage ??= thread.NewestMessage;
 
