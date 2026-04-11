@@ -546,11 +546,15 @@ public partial class CXPostApp
                             // Animate checked rows fading out before removal
                             if (_messageTable != null)
                             {
+                                var checkedUids = new HashSet<uint>(checkedMsgs.Select(m => m.Uid));
                                 var checkedIndices = new List<int>();
                                 for (var i = 0; i < _messageTable.RowCount; i++)
                                 {
                                     var row = _messageTable.GetRow(i);
-                                    if (row.Tag is MailMessage m && checkedMsgs.Any(cm => cm.Uid == m.Uid))
+                                    if (row.Tag is MailMessage m && checkedUids.Contains(m.Uid))
+                                        checkedIndices.Add(i);
+                                    else if (row.Tag is Components.ThreadSummary ts
+                                        && ts.Messages.Any(tm => checkedUids.Contains(tm.Uid)))
                                         checkedIndices.Add(i);
                                 }
                                 if (checkedIndices.Count > 0)
@@ -640,6 +644,11 @@ public partial class CXPostApp
                                 // Delete from cache + start undo window (no RefreshMessageList —
                                 // the animation already removed the table row)
                                 _messageListCoordinator.DeleteMessageNoRefresh(capturedMsg, capturedFolder, _cts.Token);
+
+                                // In threaded view, rebuild thread summaries so header rows
+                                // show correct count/unread/flagged after child deletion.
+                                if (_isThreadedView && !_isSearchActive)
+                                    _messageListCoordinator.RefreshMessageList();
 
                                 // Force focus back to the message table. The animation's RemoveRow
                                 // triggered OnMessageSelected → ShowMessagePreview which may have
@@ -737,6 +746,35 @@ public partial class CXPostApp
             }
             else
             {
+                // In threaded view with a collapsed thread selected, toggle all messages in the thread
+                var selectedRow = _messageTable?.SelectedRowIndex >= 0
+                    ? _messageTable.GetRow(_messageTable.SelectedRowIndex) : null;
+                if (_isThreadedView && selectedRow?.Tag is Components.ThreadSummary selectedThread
+                    && selectedThread.IsThread && folder != null)
+                {
+                    var threadMsgs = selectedThread.Messages;
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var willRead = selectedThread.HasUnread;
+                            var progressId = "read-progress";
+                            var progressLabel = willRead ? "Marking thread as read" : "Marking thread as unread";
+                            EnqueueUiAction(() => ReplaceMessage(progressId, $"{progressLabel}..."));
+                            await _messageListCoordinator.ToggleReadMultipleAsync(threadMsgs, folder, _cts.Token);
+                            var label = willRead ? "read" : "unread";
+                            EnqueueUiAction(() =>
+                            {
+                                DismissMessage(progressId);
+                                ShowSuccess($"Thread ({threadMsgs.Count} messages) marked {label}");
+                            });
+                        }
+                        catch (Exception ex) { EnqueueUiAction(() => ShowError($"Read toggle failed: {ex.Message}")); }
+                    });
+                    e.Handled = true;
+                    return;
+                }
+
                 var msg = GetSelectedMessage();
                 if (msg != null && folder != null)
                 {
@@ -800,11 +838,15 @@ public partial class CXPostApp
                                 // Animate checked rows fading out before move
                                 if (_messageTable != null)
                                 {
+                                    var moveUids = new HashSet<uint>(checkedMsgs.Select(m => m.Uid));
                                     var checkedIndices = new List<int>();
                                     for (var i = 0; i < _messageTable.RowCount; i++)
                                     {
                                         var row = _messageTable.GetRow(i);
-                                        if (row.Tag is MailMessage m && checkedMsgs.Any(cm => cm.Uid == m.Uid))
+                                        if (row.Tag is MailMessage m && moveUids.Contains(m.Uid))
+                                            checkedIndices.Add(i);
+                                        else if (row.Tag is Components.ThreadSummary ts
+                                            && ts.Messages.Any(tm => moveUids.Contains(tm.Uid)))
                                             checkedIndices.Add(i);
                                     }
                                     if (checkedIndices.Count > 0)

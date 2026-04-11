@@ -187,9 +187,13 @@ public partial class CXPostApp : IDisposable
         var dateCol = _messageTable.Columns[4];
         dateCol.CustomRowComparer = (a, b) =>
         {
-            var dateA = (a.Tag as MailMessage)?.Date ?? DateTime.MinValue;
-            var dateB = (b.Tag as MailMessage)?.Date ?? DateTime.MinValue;
-            return dateA.CompareTo(dateB);
+            static DateTime ExtractDate(TableRow row) => row.Tag switch
+            {
+                MailMessage m => m.Date,
+                ThreadSummary t => t.NewestMessage.Date,
+                _ => DateTime.MinValue
+            };
+            return ExtractDate(a).CompareTo(ExtractDate(b));
         };
         _messageTable.MultiSelectionChanged += (_, count) =>
         {
@@ -254,6 +258,7 @@ public partial class CXPostApp : IDisposable
                 ShowConversationPreview(selectedThread);
                 UpdatePreviewHeader(selectedThread.NewestMessage);
                 UpdateBottomBar();
+                _messageListCoordinator.SelectMessage(selectedThread.NewestMessage);
                 DebouncedFetchThreadBodies(selectedThread, selectedThread.NewestMessage);
                 return;
             }
@@ -281,6 +286,7 @@ public partial class CXPostApp : IDisposable
                     ShowConversationPreview(ts, threadMsg);
                     UpdatePreviewHeader(threadMsg);
                     UpdateBottomBar();
+                    _messageListCoordinator.SelectMessage(threadMsg);
                     DebouncedFetchThreadBodies(ts, threadMsg);
                     return;
                 }
@@ -563,6 +569,10 @@ public partial class CXPostApp : IDisposable
         if (_currentLayout == "wide")
         {
             // Wide layout: Folders | Messages | Preview (3 columns, all with explicit widths)
+            // Clear any explicit height from classic layout's horizontal splitter —
+            // in wide layout the message table fills its column vertically.
+            _messageTable!.Height = null;
+
             var savedMessageWidth = _layoutModeManager.GetSavedMessageColumnWidth();
             var messageColumn = new ColumnContainer(_mainGrid);
             messageColumn.Width = savedMessageWidth > 0 ? savedMessageWidth : 40;

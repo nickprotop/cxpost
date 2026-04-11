@@ -39,6 +39,10 @@ public partial class CXPostApp
             _threadSummaries = ConversationGrouper.Group(messages);
             _messageTable.ClearRows();
 
+            // Prune expanded IDs that no longer exist (filtered out, deleted, etc.)
+            var currentThreadIds = new HashSet<string>(_threadSummaries.Select(t => t.ThreadId));
+            _expandedThreadIds.IntersectWith(currentThreadIds);
+
             foreach (var thread in _threadSummaries)
             {
                 var headerRow = BuildThreadHeaderRow(thread);

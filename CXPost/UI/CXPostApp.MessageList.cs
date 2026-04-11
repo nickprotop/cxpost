@@ -33,6 +33,10 @@ public partial class CXPostApp
             return;
         }
 
+        // Search mode uses flat list even in threaded view — clear stale thread data
+        if (_isSearchActive)
+            _threadSummaries = null;
+
         // During search: results span multiple folders — use FolderId+Uid as composite key
         // for in-place updates instead of clearing and rebuilding
         if (_isSearchActive)
@@ -42,11 +46,14 @@ public partial class CXPostApp
             var incomingKeys = new HashSet<(int FolderId, uint Uid)>(
                 messages.Select(m => (m.FolderId, m.Uid)));
 
-            // Remove rows no longer in the result set (reverse to keep indices stable)
+            // Remove rows no longer in the result set (reverse to keep indices stable).
+            // ThreadSummary rows from threaded view are always removed — search uses flat display.
             for (var i = _messageTable.RowCount - 1; i >= 0; i--)
             {
                 var row = _messageTable.GetRow(i);
-                if (row.Tag is MailMessage m && !incomingKeys.Contains((m.FolderId, m.Uid)))
+                if (row.Tag is Components.ThreadSummary)
+                    _messageTable.RemoveRow(i);
+                else if (row.Tag is MailMessage m && !incomingKeys.Contains((m.FolderId, m.Uid)))
                     _messageTable.RemoveRow(i);
             }
 
@@ -423,6 +430,8 @@ public partial class CXPostApp
             var row = _messageTable.GetRow(i);
             if (row.Tag is MailMessage msg)
                 messages.Add(msg);
+            else if (row.Tag is Components.ThreadSummary thread)
+                messages.Add(thread.NewestMessage);
         }
         return messages;
     }

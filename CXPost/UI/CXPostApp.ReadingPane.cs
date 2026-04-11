@@ -498,7 +498,10 @@ public partial class CXPostApp
         if (msg != null && _messageTable != null)
         {
             var selectedIdx = _messageTable.SelectedRowIndex + 1;
-            var total = _messageTable.RowCount;
+            // In threaded view, count thread summaries (not child rows) for the "N of M" display
+            var total = _isThreadedView && _threadSummaries != null
+                ? _threadSummaries.Count
+                : _messageTable.RowCount;
             var status = msg.IsRead ? "[grey50]Read[/]" : "[yellow]Unread[/]";
             var date = msg.Date.ToString("MMM d, yyyy 'at' h:mm tt");
             _previewPanelHeader.AddLeftText(
