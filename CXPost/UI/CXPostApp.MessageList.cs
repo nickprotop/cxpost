@@ -24,14 +24,14 @@ public partial class CXPostApp
     {
         if (_messageTable == null) return;
 
+        if (_isFlaggedFilterActive)
+            messages = messages.Where(m => m.IsFlagged).ToList();
+
         if (_isThreadedView && !_isSearchActive)
         {
             PopulateThreadedMessageList(messages);
             return;
         }
-
-        if (_isFlaggedFilterActive)
-            messages = messages.Where(m => m.IsFlagged).ToList();
 
         // During search: results span multiple folders — use FolderId+Uid as composite key
         // for in-place updates instead of clearing and rebuilding
