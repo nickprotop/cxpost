@@ -35,7 +35,7 @@ public partial class CXPostApp : IDisposable
     private readonly NotificationCoordinator _notificationCoordinator;
     private readonly Components.StatusBarBuilder _statusBar;
     private StatusBarControl? _bottomBar;
-    private readonly ConcurrentQueue<Action> _pendingUiActions = new();
+
     private readonly CancellationTokenSource _cts = new();
 
     private Window? _mainWindow;
@@ -636,21 +636,22 @@ public partial class CXPostApp : IDisposable
         {
             try
             {
-                // Drain UI update queue
-                while (_pendingUiActions.TryDequeue(out var action))
-                    action();
-
-                // Update clock and expire transient messages
-                UpdateClockDisplay();
-                _messageBar?.Tick();
-
-                // Advance sync spinner animation + color pulse
-                if (_syncCoordinator.SyncingFolderIds.Count > 0)
+                // All UI mutations must go through the main thread's queue.
+                // This async thread is only a timer — it schedules work, never touches controls directly.
+                _ws.EnqueueOnUIThread(() =>
                 {
-                    _spinnerIndex = (_spinnerIndex + 1) % SpinnerFrames.Length;
-                    _syncPulsePhase = (_syncPulsePhase + 0.15f) % ((float)Math.PI * 2);
-                    UpdateSyncSpinner();
-                }
+                    // Update clock and expire transient messages
+                    UpdateClockDisplay();
+                    _messageBar?.Tick();
+
+                    // Advance sync spinner animation + color pulse
+                    if (_syncCoordinator.SyncingFolderIds.Count > 0)
+                    {
+                        _spinnerIndex = (_spinnerIndex + 1) % SpinnerFrames.Length;
+                        _syncPulsePhase = (_syncPulsePhase + 0.15f) % ((float)Math.PI * 2);
+                        UpdateSyncSpinner();
+                    }
+                });
 
                 await Task.Delay(500, ct);
             }
@@ -660,7 +661,7 @@ public partial class CXPostApp : IDisposable
 
     public void EnqueueUiAction(Action action)
     {
-        _pendingUiActions.Enqueue(action);
+        _ws.EnqueueOnUIThread(action);
     }
 
 
