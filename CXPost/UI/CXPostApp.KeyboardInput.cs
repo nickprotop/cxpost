@@ -695,52 +695,25 @@ public partial class CXPostApp
                         //    → OnMessageSelected → ShowMessagePreview + body fetch for next message)
                         // 3. After animation: delete from cache + undo window + force focus back
 
-                        if (_deleteInProgress)
-                        {
-                            e.Handled = true;
-                            return;
-                        }
+                        if (_deleteInProgress) { e.Handled = true; return; }
                         _deleteInProgress = true;
 
                         var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
                         if (rowIdx < 0 || _messageTable == null)
-                        {
-                            _deleteInProgress = false;
-                            e.Handled = true;
-                            return;
-                        }
+                        { _deleteInProgress = false; e.Handled = true; return; }
 
-                        var tableHadFocus = _mainWindow?.FocusManager?.IsInFocusPath(_messageTable) == true;
+                        // Remove row immediately — selection advances, OnMessageSelected
+                        // fires naturally showing preview for next message, focus stays.
+                        _messageTable.RemoveRow(rowIdx);
 
-                        // Animate the row fade-out (visual only — RemoveRow fires in onComplete
-                        // with identity check, harmless if row is already gone after rebuild).
-                        _messageTable.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(250));
-
-                        // Commit immediately — no delay. The _deleteInProgress guard prevents
-                        // double-delete, and the animation's onComplete verifies row identity.
+                        // Delete from cache + start undo window
                         _messageListCoordinator.DeleteMessageNoRefresh(msg, folder, _cts.Token);
 
-                        // In threaded view, rebuild thread summaries so header rows
-                        // show correct count/unread/flagged after child deletion.
+                        // In threaded view, rebuild to update thread header counts
                         if (_isThreadedView && !_isSearchActive)
                             _messageListCoordinator.RefreshMessageList();
 
                         _deleteInProgress = false;
-
-                        // Show preview for the next selected message and restore focus.
-                        var nextMsg = GetSelectedMessage();
-                        if (nextMsg != null)
-                        {
-                            ShowMessagePreview(nextMsg);
-                            UpdatePreviewHeader(nextMsg);
-                        }
-                        else
-                            ClearReadingPane();
-                        UpdateBottomBar();
-                        UpdateToolbar();
-
-                        if (tableHadFocus && _mainWindow?.FocusManager != null)
-                            _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
                     }
                 }
             }

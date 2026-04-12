@@ -37,6 +37,7 @@ public partial class CXPostApp
             }
 
             _threadSummaries = ConversationGrouper.Group(messages);
+            var savedScroll = _messageTable.ScrollOffset;
             _messageTable.ClearRows();
 
             // Prune expanded IDs that no longer exist (filtered out, deleted, etc.)
@@ -76,6 +77,10 @@ public partial class CXPostApp
                     }
                 }
             }
+
+            // Restore scroll position (ClearRows resets to 0)
+            if (_messageTable.RowCount > 0)
+                _messageTable.ScrollOffset = savedScroll;
         }
         finally { _isPopulatingThreadedList = false; }
     }
@@ -105,6 +110,7 @@ public partial class CXPostApp
                 }
             }
 
+            var savedScroll = _messageTable.ScrollOffset;
             _messageTable.ClearRows();
             foreach (var thread in _threadSummaries)
             {
@@ -134,6 +140,10 @@ public partial class CXPostApp
                     }
                 }
             }
+
+            // Restore scroll position (ClearRows resets to 0)
+            if (_messageTable.RowCount > 0)
+                _messageTable.ScrollOffset = savedScroll;
         }
         finally { _isPopulatingThreadedList = false; }
     }
