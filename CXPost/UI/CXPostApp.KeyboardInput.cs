@@ -572,6 +572,83 @@ public partial class CXPostApp
             }
             else
             {
+                // === Collapsed thread delete ===
+                // When a collapsed thread header is selected, delete ALL messages in the thread.
+                // GetSelectedMessage() only returns NewestMessage — the row visually represents the whole thread.
+                var selectedRow = _messageTable?.SelectedRowIndex >= 0
+                    ? _messageTable.GetRow(_messageTable.SelectedRowIndex) : null;
+
+                if (_isThreadedView && selectedRow?.Tag is Components.ThreadSummary selectedThread
+                    && selectedThread.IsThread && folder != null)
+                {
+                    var threadMsgs = selectedThread.Messages;
+                    var account = GetAccountForMessage(selectedThread.NewestMessage) ?? GetCurrentAccount();
+                    var trash = account != null ? FolderResolver.GetTrash(account, _cacheService) : null;
+                    var isInTrash = trash != null && folder.Id == trash.Id;
+                    var noTrash = trash == null;
+
+                    if (isInTrash || noTrash)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            var dialog = new ConfirmDialog(
+                                "Permanently Delete Thread",
+                                $"All {threadMsgs.Count} messages in this thread will be permanently deleted.");
+                            var confirmed = await dialog.ShowAsync(_ws);
+                            if (confirmed)
+                            {
+                                EnqueueUiAction(() =>
+                                {
+                                    foreach (var m in threadMsgs)
+                                        _cacheService.DeleteMessage(folder.Id, m.Uid);
+                                    _messageListCoordinator.RefreshMessageList();
+                                    UpdateBottomBar();
+                                    UpdateToolbar();
+                                });
+                                try
+                                {
+                                    using var imap = await _imapFactory.CreateConnectionAsync(account!, _cts.Token);
+                                    foreach (var m in threadMsgs)
+                                        await imap.DeleteMessageAsync(folder.Path, m.Uid, _cts.Token);
+                                }
+                                catch (Exception ex)
+                                {
+                                    EnqueueUiAction(() => ShowError($"Delete failed: {ex.Message}"));
+                                }
+                            }
+                        });
+                    }
+                    else
+                    {
+                        if (_deleteInProgress) { e.Handled = true; return; }
+                        _deleteInProgress = true;
+
+                        var rowIdx = _messageTable!.SelectedRowIndex;
+                        var tableHadFocus = _mainWindow?.FocusManager?.IsInFocusPath(_messageTable) == true;
+                        _messageTable.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(250));
+
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await Task.Delay(280, _cts.Token);
+                                EnqueueUiAction(() =>
+                                {
+                                    _messageListCoordinator.DeleteMultipleOptimistic(threadMsgs, folder, _cts.Token);
+                                    ClearSelection();
+                                    if (tableHadFocus && _mainWindow?.FocusManager != null && _messageTable != null)
+                                        _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
+                                    _deleteInProgress = false;
+                                });
+                            }
+                            catch (OperationCanceledException) { _deleteInProgress = false; }
+                        }, _cts.Token);
+                    }
+                    e.Handled = true;
+                    return;
+                }
+
+                // === Single message delete (flat view, expanded child, or single-message thread) ===
                 var msg = GetSelectedMessage();
                 if (msg != null && folder != null)
                 {
@@ -594,9 +671,6 @@ public partial class CXPostApp
                                 {
                                     _cacheService.DeleteMessage(folder.Id, msg.Uid);
                                     _messageListCoordinator.RefreshMessageList();
-                                    var nextMsg = GetSelectedMessage();
-                                    if (nextMsg != null) ShowMessagePreview(nextMsg);
-                                    else ClearReadingPane();
                                     UpdateBottomBar();
                                     UpdateToolbar();
                                 });
@@ -621,9 +695,17 @@ public partial class CXPostApp
                         //    → OnMessageSelected → ShowMessagePreview + body fetch for next message)
                         // 3. After animation: delete from cache + undo window + force focus back
 
+                        if (_deleteInProgress)
+                        {
+                            e.Handled = true;
+                            return;
+                        }
+                        _deleteInProgress = true;
+
                         var rowIdx = _messageTable?.SelectedRowIndex ?? -1;
                         if (rowIdx < 0 || _messageTable == null)
                         {
+                            _deleteInProgress = false;
                             e.Handled = true;
                             return;
                         }
@@ -636,26 +718,35 @@ public partial class CXPostApp
 
                         _ = Task.Run(async () =>
                         {
-                            await Task.Delay(280, _cts.Token);
-                            EnqueueUiAction(() =>
+                            try
                             {
-                                if (_messageTable == null) return;
+                                await Task.Delay(280, _cts.Token);
+                                EnqueueUiAction(() =>
+                                {
+                                    if (_messageTable == null) { _deleteInProgress = false; return; }
 
-                                // Delete from cache + start undo window (no RefreshMessageList —
-                                // the animation already removed the table row)
-                                _messageListCoordinator.DeleteMessageNoRefresh(capturedMsg, capturedFolder, _cts.Token);
+                                    // Delete from cache + start undo window (no RefreshMessageList —
+                                    // the animation already removed the table row)
+                                    _messageListCoordinator.DeleteMessageNoRefresh(capturedMsg, capturedFolder, _cts.Token);
 
-                                // In threaded view, rebuild thread summaries so header rows
-                                // show correct count/unread/flagged after child deletion.
-                                if (_isThreadedView && !_isSearchActive)
-                                    _messageListCoordinator.RefreshMessageList();
+                                    // In threaded view, rebuild thread summaries so header rows
+                                    // show correct count/unread/flagged after child deletion.
+                                    if (_isThreadedView && !_isSearchActive)
+                                        _messageListCoordinator.RefreshMessageList();
 
-                                // Force focus back to the message table. The animation's RemoveRow
-                                // triggered OnMessageSelected → ShowMessagePreview which may have
-                                // stolen focus to the reading pane's interactive children.
-                                if (tableHadFocus && _mainWindow?.FocusManager != null)
-                                    _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
-                            });
+                                    // Force focus back to the message table. The animation's RemoveRow
+                                    // triggered OnMessageSelected → ShowMessagePreview which may have
+                                    // stolen focus to the reading pane's interactive children.
+                                    if (tableHadFocus && _mainWindow?.FocusManager != null)
+                                        _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
+
+                                    _deleteInProgress = false;
+                                });
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                _deleteInProgress = false;
+                            }
                         }, _cts.Token);
                     }
                 }

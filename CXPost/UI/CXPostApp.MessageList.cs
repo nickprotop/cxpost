@@ -225,7 +225,7 @@ public partial class CXPostApp
 
     private void OnMessageSelected(object? sender, int rowIndex)
     {
-        if (_suppressMessageSelectionHandler) return;
+        if (_deleteInProgress) return;
         if (_messageTable == null || rowIndex < 0) return;
         var row = _messageTable.GetRow(rowIndex);
 

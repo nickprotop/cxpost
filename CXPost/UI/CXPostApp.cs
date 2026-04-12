@@ -93,9 +93,8 @@ public partial class CXPostApp : IDisposable
     private List<ThreadSummary>? _threadSummaries;
     private string? _readModeThreadContext; // null = show all, non-null = scoped to this threadId
 
-    // Delete flow: suppresses OnMessageSelected during orchestrated delete commit
-    // to prevent ShowMessagePreview cascade from stealing focus
-    private bool _suppressMessageSelectionHandler;
+    // Delete flow: prevents re-entry during the 280ms animation window
+    private volatile bool _deleteInProgress;
 
     // Search & filter state
     private volatile bool _isFlaggedFilterActive;
