@@ -710,44 +710,37 @@ public partial class CXPostApp
                             return;
                         }
 
-                        var capturedMsg = msg;
-                        var capturedFolder = folder;
                         var tableHadFocus = _mainWindow?.FocusManager?.IsInFocusPath(_messageTable) == true;
 
+                        // Animate the row fade-out (visual only — RemoveRow fires in onComplete
+                        // with identity check, harmless if row is already gone after rebuild).
                         _messageTable.AnimateRowRemoval(rowIdx, TimeSpan.FromMilliseconds(250));
 
-                        _ = Task.Run(async () =>
+                        // Commit immediately — no delay. The _deleteInProgress guard prevents
+                        // double-delete, and the animation's onComplete verifies row identity.
+                        _messageListCoordinator.DeleteMessageNoRefresh(msg, folder, _cts.Token);
+
+                        // In threaded view, rebuild thread summaries so header rows
+                        // show correct count/unread/flagged after child deletion.
+                        if (_isThreadedView && !_isSearchActive)
+                            _messageListCoordinator.RefreshMessageList();
+
+                        _deleteInProgress = false;
+
+                        // Show preview for the next selected message and restore focus.
+                        var nextMsg = GetSelectedMessage();
+                        if (nextMsg != null)
                         {
-                            try
-                            {
-                                await Task.Delay(280, _cts.Token);
-                                EnqueueUiAction(() =>
-                                {
-                                    if (_messageTable == null) { _deleteInProgress = false; return; }
+                            ShowMessagePreview(nextMsg);
+                            UpdatePreviewHeader(nextMsg);
+                        }
+                        else
+                            ClearReadingPane();
+                        UpdateBottomBar();
+                        UpdateToolbar();
 
-                                    // Delete from cache + start undo window (no RefreshMessageList —
-                                    // the animation already removed the table row)
-                                    _messageListCoordinator.DeleteMessageNoRefresh(capturedMsg, capturedFolder, _cts.Token);
-
-                                    // In threaded view, rebuild thread summaries so header rows
-                                    // show correct count/unread/flagged after child deletion.
-                                    if (_isThreadedView && !_isSearchActive)
-                                        _messageListCoordinator.RefreshMessageList();
-
-                                    // Force focus back to the message table. The animation's RemoveRow
-                                    // triggered OnMessageSelected → ShowMessagePreview which may have
-                                    // stolen focus to the reading pane's interactive children.
-                                    if (tableHadFocus && _mainWindow?.FocusManager != null)
-                                        _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
-
-                                    _deleteInProgress = false;
-                                });
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                _deleteInProgress = false;
-                            }
-                        }, _cts.Token);
+                        if (tableHadFocus && _mainWindow?.FocusManager != null)
+                            _mainWindow.FocusManager.SetFocus(_messageTable, FocusReason.Programmatic);
                     }
                 }
             }
