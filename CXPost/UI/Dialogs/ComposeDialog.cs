@@ -316,7 +316,11 @@ public class ComposeDialog : DialogBase<ComposeResult?>
             var confirmed = await new ConfirmDialog("Discard Message", "Discard this message?")
                 .ShowAsync(WindowSystem);
             if (confirmed)
-                CloseWithResult(null);
+            {
+                // Marshal back onto the UI thread (Rule 13): this continuation runs
+                // off the UI thread because the dialog was launched via Task.Run.
+                WindowSystem.EnqueueOnUIThread(() => CloseWithResult(null));
+            }
         });
     }
 
@@ -342,7 +346,10 @@ public class ComposeDialog : DialogBase<ComposeResult?>
                 {
                     _attachmentPaths.Add(path);
                 }
-                RefreshAttachmentUI();
+                // Marshal the UI mutation onto the UI thread (Rule 13): this
+                // continuation runs off-thread because the picker was launched
+                // via Task.Run, and RefreshAttachmentUI mutates _attachmentPanel.
+                WindowSystem.EnqueueOnUIThread(RefreshAttachmentUI);
             }
         });
     }

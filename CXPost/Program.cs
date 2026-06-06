@@ -59,7 +59,8 @@ public class Program
                 driver,
                 options: new ConsoleWindowSystemOptions(
                     ShowTopPanel: false,
-                    ShowBottomPanel: false));
+                    ShowBottomPanel: false,
+                    InstallSynchronizationContext: true));
             services.AddSingleton(ws);
 
             // Initialize IMAP debug logger

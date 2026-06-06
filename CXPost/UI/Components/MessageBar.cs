@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Extensions;
 using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Parsing;
@@ -279,9 +280,25 @@ public class MessageBar
             _ = Task.Run(async () =>
             {
                 await Task.Delay(500);
-                _ruleControl.ClearProgress(TimeSpan.FromMilliseconds(300));
-                _totalFetched = 0;
-                _totalExpected = 0;
+                // Marshal the UI mutation onto the UI thread (Rule 13):
+                // ClearProgress and the render-affecting field resets run on a
+                // thread-pool thread here. Reach the window system via the control.
+                var ws = _ruleControl.GetParentWindow()?.GetConsoleWindowSystem;
+                if (ws != null)
+                {
+                    ws.EnqueueOnUIThread(() =>
+                    {
+                        _ruleControl.ClearProgress(TimeSpan.FromMilliseconds(300));
+                        _totalFetched = 0;
+                        _totalExpected = 0;
+                    });
+                }
+                else
+                {
+                    _ruleControl.ClearProgress(TimeSpan.FromMilliseconds(300));
+                    _totalFetched = 0;
+                    _totalExpected = 0;
+                }
             });
         }
     }
