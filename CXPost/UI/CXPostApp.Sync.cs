@@ -182,6 +182,6 @@ public partial class CXPostApp
         if (_folderTree == null) return;
         // Only invalidate the tree to trigger a repaint — the spinner frame
         // is read during render from _spinnerIndex
-        _mainWindow?.Invalidate(false);
+        _mainWindow?.Invalidate(SharpConsoleUI.Invalidation.Repaint);
     }
 }

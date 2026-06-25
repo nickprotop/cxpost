@@ -10,13 +10,14 @@ namespace CXPost.UI.Components;
 
 /// <summary>
 /// Portal content that renders a list of autocomplete suggestions below a prompt control.
+/// Hosts a real <see cref="ListControl"/> as its <see cref="PortalContentBase.Content"/>, so the
+/// base class measures/paints the list through the DOM and the list self-invalidates the window
+/// (child → portal → window) — no manual <c>Invalidate</c> calls are needed.
 /// </summary>
 public class AutocompletePortalContent : PortalContentBase
 {
     private readonly BaseControl _anchor;
-    private List<string> _items = [];
-    private int _selectedIndex;
-    private int _scrollOffset;
+    private readonly ListControl _list;
     private const int MaxVisibleItems = 8;
 
     /// <summary>Fired when the user confirms a selection (Enter/Tab/Click).</summary>
@@ -29,54 +30,58 @@ public class AutocompletePortalContent : PortalContentBase
         BorderStyle = BoxChars.Rounded;
         BorderColor = Color.Grey35;
         BorderBackgroundColor = ColorScheme.WindowBackground;
+
+        _list = new ListControl
+        {
+            BackgroundColor = ColorScheme.WindowBackground,
+            ForegroundColor = Color.Grey70,
+            FocusedBackgroundColor = ColorScheme.WindowBackground,
+            FocusedForegroundColor = Color.Grey70,
+            HighlightBackgroundColor = ColorScheme.PanelHeaderBackground,
+            HighlightForegroundColor = Color.White,
+            HoverHighlightsItems = false,
+            AutoAdjustWidth = false,
+        };
+
+        // Host the list as the portal's Content: the base measures/paints it through the DOM and
+        // wires its Container → self-invalidation (child → portal → window).
+        Content = _list;
+
+        // Mark the list as portal-focused so the selected row uses HighlightBackground.
+        PortalFocusedControl = _list;
     }
 
-    public bool HasItems => _items.Count > 0;
-    public int ItemCount => _items.Count;
+    public bool HasItems => _list.Items.Count > 0;
+    public int ItemCount => _list.Items.Count;
 
     public void UpdateItems(List<string> items)
     {
-        _items = items;
-        _selectedIndex = 0;
-        _scrollOffset = 0;
-        Container?.Invalidate(true);
+        // StringItems setter self-invalidates (Relayout); no manual Invalidate needed.
+        _list.StringItems = items;
+        if (items.Count > 0)
+            _list.SelectedIndex = 0;
     }
 
     public void MoveUp()
     {
-        if (_items.Count == 0 || _selectedIndex <= 0) return;
-        _selectedIndex--;
-        EnsureVisible();
-        Container?.Invalidate(true);
+        // SelectedIndex setter self-invalidates and ensures-visible/scrolls automatically.
+        if (_list.SelectedIndex > 0)
+            _list.SelectedIndex--;
     }
 
     public void MoveDown()
     {
-        if (_items.Count == 0) return;
-        _selectedIndex = (_selectedIndex + 1) % _items.Count;
-        EnsureVisible();
-        Container?.Invalidate(true);
+        // Wrap-around; SelectedIndex setter self-invalidates and ensures-visible automatically.
+        if (_list.Items.Count > 0)
+            _list.SelectedIndex = (_list.SelectedIndex + 1) % _list.Items.Count;
     }
 
-    public string? GetSelectedItem()
-    {
-        if (_items.Count == 0 || _selectedIndex < 0 || _selectedIndex >= _items.Count)
-            return null;
-        return _items[_selectedIndex];
-    }
-
-    private void EnsureVisible()
-    {
-        if (_selectedIndex < _scrollOffset)
-            _scrollOffset = _selectedIndex;
-        else if (_selectedIndex >= _scrollOffset + MaxVisibleItems)
-            _scrollOffset = _selectedIndex - MaxVisibleItems + 1;
-    }
+    public string? GetSelectedItem() => _list.SelectedItem?.Text;
 
     public override Rectangle GetPortalBounds()
     {
-        var visibleCount = Math.Min(_items.Count, MaxVisibleItems);
-        // +2 for border
+        var visibleCount = Math.Min(_list.Items.Count, MaxVisibleItems);
+        // +2 for border (the base shrinks to the inner rect for the hosted list)
         var height = visibleCount + 2;
         var width = _anchor.ActualWidth;
         if (width < 20) width = 40;
@@ -99,46 +104,19 @@ public class AutocompletePortalContent : PortalContentBase
         if (!args.HasAnyFlag(SharpConsoleUI.Drivers.MouseFlags.Button1Clicked))
             return false;
 
-        // Account for border offset (already adjusted by base class when BorderStyle is set)
-        var row = args.Position.Y;
-        var itemIndex = row + _scrollOffset;
-        if (itemIndex >= 0 && itemIndex < _items.Count)
-        {
-            _selectedIndex = itemIndex;
-            ItemSelected?.Invoke(_items[itemIndex]);
-            return true;
-        }
-        return false;
+        // Forward to the hosted list: it updates its own selection from the click row,
+        // correctly accounting for its internal scroll offset.
+        ProcessHostedMouseEvent(args);
+
+        var selected = GetSelectedItem();
+        if (selected != null)
+            ItemSelected?.Invoke(selected);
+        return true;
     }
 
+    // Content is hosted via the base class, so this is never called (the base paints the hosted
+    // Content child directly). Kept only because PaintPortalContent is abstract.
     protected override void PaintPortalContent(CharacterBuffer buffer, LayoutRect bounds,
         LayoutRect clipRect, Color defaultFg, Color defaultBg)
-    {
-        var visibleCount = Math.Min(_items.Count, MaxVisibleItems);
-        var bg = ColorScheme.WindowBackground;
-        var selectedBg = ColorScheme.PanelHeaderBackground;
-
-        for (var i = 0; i < visibleCount; i++)
-        {
-            var itemIndex = i + _scrollOffset;
-            if (itemIndex >= _items.Count) break;
-
-            var isSelected = itemIndex == _selectedIndex;
-            var rowBg = isSelected ? selectedBg : bg;
-            var textColor = isSelected ? Color.White : Color.Grey70;
-
-            var y = bounds.Y + i;
-            if (y < clipRect.Y || y >= clipRect.Bottom) continue;
-
-            // Clear row
-            for (var x = 0; x < bounds.Width; x++)
-                buffer.SetNarrowCell(bounds.X + x, y, ' ', textColor, rowBg);
-
-            // Render text (strip markup — items are plain text from ContactsService)
-            var text = _items[itemIndex];
-            if (text.Length > bounds.Width - 2) text = text[..(bounds.Width - 2)];
-            for (var c = 0; c < text.Length; c++)
-                buffer.SetNarrowCell(bounds.X + 1 + c, y, text[c], textColor, rowBg);
-        }
-    }
+    { }
 }

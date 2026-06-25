@@ -381,8 +381,7 @@ public class ComposeDialog : DialogBase<ComposeResult?>
 
         if (_attachmentPaths.Count == 0)
         {
-            _attachmentPanel.Visible = false;
-            Modal.Invalidate(true);
+            _attachmentPanel.Visible = false; // Visible setter self-invalidates (Relayout) on change
             return;
         }
 
@@ -424,7 +423,6 @@ public class ComposeDialog : DialogBase<ComposeResult?>
             _attachmentPanel.AddControl(actionBar);
         }
 
-        Modal.Invalidate(true);
     }
 
     private static string FormatFileSize(long bytes)

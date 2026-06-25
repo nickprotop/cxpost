@@ -108,7 +108,7 @@ public abstract class DialogBase<TResult>
                 };
 
             window.PostBufferPaint += handler;
-            window.Invalidate(redrawAll: true);
+            window.Invalidate(SharpConsoleUI.Invalidation.Repaint);
             _dimOverlays.Add((window, handler));
         }
     }
@@ -118,7 +118,7 @@ public abstract class DialogBase<TResult>
         foreach (var (window, handler) in _dimOverlays)
         {
             window.PostBufferPaint -= handler;
-            window.Invalidate(redrawAll: true);
+            window.Invalidate(SharpConsoleUI.Invalidation.Repaint);
         }
         _dimOverlays.Clear();
     }

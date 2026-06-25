@@ -253,7 +253,7 @@ public partial class CXPostApp
             onUpdate: t =>
             {
                 fadeIntensity = t;
-                _mainWindow?.Invalidate(redrawAll: true);
+                _mainWindow?.Invalidate(SharpConsoleUI.Invalidation.Repaint);
             },
             onComplete: () =>
             {

@@ -552,7 +552,6 @@ public partial class CXPostApp : IDisposable
             // Hide horizontal splitter (not used in read mode)
             if (_listReadingSplitter != null) _listReadingSplitter.Visible = false;
 
-            _mainGrid.Invalidate();
             return;
         }
 
@@ -626,7 +625,6 @@ public partial class CXPostApp : IDisposable
             }
         }
 
-        _mainGrid.Invalidate();
     }
 
     private async Task MainLoopAsync(Window window, CancellationToken ct)

@@ -174,7 +174,6 @@ public partial class CXPostApp
         }
 
         _statusBar.UpdateConnectionStatus(totalUnread, _imapFactory.HasAnyConnection);
-        _folderTree.Invalidate();
     }
 
     private void OnFolderSelected(object? sender, TreeNodeEventArgs args)
